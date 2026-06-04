@@ -405,6 +405,13 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
     private void OnLayoutHorizontalPostFix()
     {
+        Control? topLevel = ParentInternal?.TopLevelControl;
+        if ((topLevel is Form topForm && topForm.WindowState == FormWindowState.Minimized))
+        {
+            ApplyCachedBounds();
+            return;
+        }
+
         ToolStripPanelCell? cell = RowManager.GetNextVisibleCell(Cells.Count - 1, forward: false);
         if (cell is null)
         {
