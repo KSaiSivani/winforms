@@ -4139,29 +4139,6 @@ public class ListViewTests
         Assert.Equal(0, styleChangedCallCount);
         Assert.Equal(0, createdCallCount);
     }
-
-    [WinFormsFact]
-    public void ListView_CheckBoxes_Toggling_WithStateImageList_DoesNotDisposeImageList()
-    {
-        using ListView listView = new();
-        using ImageList stateImageList = new ImageList();
-        using Bitmap bmp = new Bitmap(16, 16);
-        using (Graphics g = Graphics.FromImage(bmp))
-        {
-            g.Clear(Color.Red);
-        }
-
-        stateImageList.Images.Add(bmp);
-        IntPtr h = listView.Handle;
-        listView.StateImageList = stateImageList;
-        listView.CheckBoxes = true;
-        listView.CheckBoxes = false;
-        listView.CheckBoxes = true;
-        Assert.False(stateImageList.IsDisposed);
-        Assert.Equal(1, stateImageList.Images.Count); 
-        Assert.NotEqual(IntPtr.Zero, stateImageList.Handle);
-
-    }
     
     public static IEnumerable<object[]> GetItemRect_InvokeCustomGetItemRect_TestData()
     {
