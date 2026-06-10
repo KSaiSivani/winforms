@@ -514,11 +514,10 @@ public partial class ListView : Control
 
                     _listViewState[LISTVIEWSTATE_checkBoxes] = value;
 
-                    if ((!value && StateImageList is not null && IsHandleCreated) ||
+                    if ((StateImageList is not null && IsHandleCreated) ||
                         (!value && Alignment == ListViewAlignment.Left && IsHandleCreated) ||
                         (value && View == View.List && IsHandleCreated) ||
-                        (value && (View == View.SmallIcon || View == View.LargeIcon) && IsHandleCreated) ||
-                        (value && StateImageList is not null && IsHandleCreated))
+                        (value && (View == View.SmallIcon || View == View.LargeIcon) && IsHandleCreated))
                     {
                         // we have to recreate the handle when we are going from CheckBoxes == true to CheckBoxes == false
                         // if we want to have the bitmaps from the StateImageList on the items.
