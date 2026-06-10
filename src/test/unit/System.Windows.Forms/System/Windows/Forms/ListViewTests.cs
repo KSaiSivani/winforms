@@ -4139,7 +4139,7 @@ public class ListViewTests
         Assert.Equal(0, styleChangedCallCount);
         Assert.Equal(0, createdCallCount);
     }
-    
+
     public static IEnumerable<object[]> GetItemRect_InvokeCustomGetItemRect_TestData()
     {
         yield return new object[] { default(RECT), Rectangle.Empty };
