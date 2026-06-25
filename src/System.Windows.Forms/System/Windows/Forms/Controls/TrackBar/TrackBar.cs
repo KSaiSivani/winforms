@@ -39,6 +39,10 @@ public partial class TrackBar : Control, ISupportInitialize
     private bool _autoDrawTicks;
     // Mouse wheel movement
     private int _cumulativeWheelData;
+    // Selection range support
+    private bool _showSelectionRange;
+    private int _selectionStart;
+    private int _selectionLength;
 
     // Disable value range checking while initializing the control
     private bool _initializing;
@@ -181,6 +185,12 @@ public partial class TrackBar : Control, ISupportInitialize
                 // Don't need these styles when mirroring is turned on.
                 cp.ExStyle |= (int)(WINDOW_EX_STYLE.WS_EX_LAYOUTRTL | WINDOW_EX_STYLE.WS_EX_NOINHERITLAYOUT);
                 cp.ExStyle &= ~(int)(WINDOW_EX_STYLE.WS_EX_RTLREADING | WINDOW_EX_STYLE.WS_EX_RIGHT | WINDOW_EX_STYLE.WS_EX_LEFTSCROLLBAR);
+            }
+
+            // Enable selection range support in the native control when requested.
+            if (_showSelectionRange)
+            {
+                cp.Style |= (int)PInvoke.TBS_ENABLESELRANGE;
             }
 
             return cp;
@@ -591,7 +601,125 @@ public partial class TrackBar : Control, ISupportInitialize
             }
         }
     }
+    /// <summary>
+    ///  Indicates whether the TrackBar displays a selection range highlight.
+    ///  When true, the control applies the TBS_ENABLESELRANGE style and draws
+    ///  a translucent overlay between SelectionStart and SelectionEnd.
+    /// </summary>
+    [SRCategory(nameof(SR.CatBehavior))]
+    [DefaultValue(false)]
+    [Browsable(true)]
+    [EditorBrowsable(EditorBrowsableState.Always)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+    [Localizable(true)]
+    public bool ShowSelectionRange
+    {
+        get => _showSelectionRange;
+        set
+        {
+            if (_showSelectionRange == value)
+            {
+                return;
+            }
 
+            _showSelectionRange = value;
+
+            // Style change requires recreating the native handle so the native
+            // control receives the TBS_ENABLESELRANGE style.
+            if (IsHandleCreated)
+            {
+                RecreateHandle();
+            }
+        }
+    }
+
+    /// <summary>
+    ///  The starting position of the TrackBar’s selection range.
+    ///  Must be between Minimum and Maximum. Setting this property updates
+    ///  the native control and ensures SelectionLength remains valid.
+    /// </summary>
+    [SRCategory(nameof(SR.CatBehavior))]
+    [DefaultValue(0)]
+    [Browsable(true)]
+    [EditorBrowsable(EditorBrowsableState.Always)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+    public int SelectionStart
+    {
+        get => _selectionStart;
+        set
+        {
+            int newStart = value;
+            if (newStart < _minimum)
+            {
+                newStart = _minimum;
+            }
+
+            if (newStart > _maximum)
+            {
+                newStart = _maximum;
+            }
+
+            if (_selectionStart == newStart)
+            {
+                return;
+            }
+
+            _selectionStart = newStart;
+
+            // Ensure selection length stays within range
+            if (_selectionStart + _selectionLength > _maximum)
+            {
+                _selectionLength = _maximum - _selectionStart;
+            }
+
+            if (IsHandleCreated)
+            {
+                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)true, (LPARAM)_selectionStart);
+                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
+            }
+        }
+    }
+
+    /// <summary>
+    ///  The length of the TrackBar’s selection range, beginning at SelectionStart.
+    ///  Must be greater than or equal to zero, and clamped so that
+    ///  SelectionStart + SelectionLength does not exceed Maximum.
+    /// </summary>
+    [SRCategory(nameof(SR.CatBehavior))]
+    [DefaultValue(0)]
+    [Browsable(true)]
+    [EditorBrowsable(EditorBrowsableState.Always)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
+    public int SelectionLength
+    {
+        get => _selectionLength;
+        set
+        {
+            if (value < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value, "SelectionLength must be >= 0.");
+            }
+
+            int newLength = value;
+            if (_selectionStart + newLength > _maximum)
+            {
+                newLength = _maximum - _selectionStart;
+            }
+
+            if (_selectionLength == newLength)
+            {
+                return;
+            }
+
+            _selectionLength = newLength;
+
+            if (IsHandleCreated)
+            {
+                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
+            }
+        }
+    }
+    
     /// <summary>
     ///  The current location of the TrackBar thumb. This value must be between
     ///  the lower and upper limits of the TrackBar range.
@@ -747,6 +875,39 @@ public partial class TrackBar : Control, ISupportInitialize
         }
     }
 
+    /// <summary>
+    ///  Constrain the current selection start/length to be within the minimum and maximum.
+    /// </summary>
+    private void ConstrainSelection()
+    {
+        if (_selectionStart < _minimum)
+        {
+            _selectionStart = _minimum;
+        }
+
+        if (_selectionStart > _maximum)
+        {
+            _selectionStart = _maximum;
+        }
+
+        if (_selectionLength < 0)
+        {
+            _selectionLength = 0;
+        }
+
+        if (_selectionStart + _selectionLength > _maximum)
+        {
+            _selectionLength = _maximum - _selectionStart;
+        }
+
+        if (IsHandleCreated)
+        {
+            // Update native control selection positions.
+            PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)true, (LPARAM)_selectionStart);
+            PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
+        }
+    }
+
     protected override AccessibleObject CreateAccessibilityInstance() => new TrackBarAccessibleObject(this);
 
     protected override unsafe void CreateHandle()
@@ -873,6 +1034,8 @@ public partial class TrackBar : Control, ISupportInitialize
         PInvokeCore.SendMessage(this, PInvoke.TBM_SETPAGESIZE, (WPARAM)0, (LPARAM)_largeChange);
         PInvokeCore.SendMessage(this, PInvoke.TBM_SETLINESIZE, (WPARAM)0, (LPARAM)_smallChange);
         SetTrackBarPosition();
+        // Ensure selection values are pushed to the native control when handle is created.
+        ConstrainSelection();
         AdjustSize();
     }
 
@@ -1081,6 +1244,9 @@ public partial class TrackBar : Control, ISupportInitialize
                 _value = _maximum;
             }
 
+            // Ensure selection is still valid within the new range.
+            ConstrainSelection();
+
             // If user opts out of TrackBarModernRendering then recreateHandle
             // will always be false.
             if (recreateHandle)
@@ -1190,7 +1356,76 @@ public partial class TrackBar : Control, ISupportInitialize
                 break;
             default:
                 base.WndProc(ref m);
+                // After native/default painting, draw our selection overlay when using modern rendering.
+                if (_showSelectionRange && AppContextSwitches.TrackBarModernRendering)
+                {
+                    try
+                    {
+                        using Graphics g = Graphics.FromHwnd(Handle);
+                        DrawSelectionOverlay(g);
+                    }
+                    catch (Exception)
+                    {
+                        // Swallow painting exceptions to avoid breaking native paint flow.
+                    }
+                }
                 break;
+        }
+    }
+
+    private void DrawSelectionOverlay(Graphics g)
+    {
+        if (g is null)
+        {
+            return;
+        }
+
+        if (_selectionLength <= 0)
+        {
+            return;
+        }
+
+        int start = _selectionStart;
+        int end = _selectionStart + _selectionLength;
+
+        if (start > end)
+        {
+            (start, end) = (end, start);
+        }
+
+        int range = _maximum - _minimum;
+        if (range <= 0)
+        {
+            return;
+        }
+
+        Rectangle client = ClientRectangle;
+
+        if (_orientation == Orientation.Horizontal)
+        {
+            int trackLeft = client.Left;
+            int trackRight = client.Right - 1;
+            float scale = (float)(trackRight - trackLeft) / (float)range;
+            int x1 = trackLeft + (int)Math.Round((start - _minimum) * scale);
+            int x2 = trackLeft + (int)Math.Round((end - _minimum) * scale);
+            int height = Math.Max(6, client.Height / 3);
+            int y = client.Top + (client.Height - height) / 2;
+
+            using Brush b = new SolidBrush(Color.FromArgb(160, SystemColors.Highlight));
+            g.FillRectangle(b, Math.Min(x1, x2), y, Math.Max(1, Math.Abs(x2 - x1)), height);
+        }
+        else
+        {
+            int trackTop = client.Top;
+            int trackBottom = client.Bottom - 1;
+            float scale = (float)(trackBottom - trackTop) / (float)range;
+            int y1 = trackTop + (int)Math.Round((start - _minimum) * scale);
+            int y2 = trackTop + (int)Math.Round((end - _minimum) * scale);
+            int width = Math.Max(6, client.Width / 3);
+            int x = client.Left + (client.Width - width) / 2;
+
+            using Brush b = new SolidBrush(Color.FromArgb(160, SystemColors.Highlight));
+            g.FillRectangle(b, x, Math.Min(y1, y2), width, Math.Max(1, Math.Abs(y2 - y1)));
         }
     }
 }
