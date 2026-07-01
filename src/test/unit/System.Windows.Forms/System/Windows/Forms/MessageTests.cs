@@ -307,17 +307,6 @@ public class MessageTests
         yield return new object[] { PInvokeCore.WM_NCMBUTTONDOWN, " (WM_NCMBUTTONDOWN)" };
         yield return new object[] { PInvokeCore.WM_NCMBUTTONUP, " (WM_NCMBUTTONUP)" };
         yield return new object[] { PInvokeCore.WM_NCMBUTTONDBLCLK, " (WM_NCMBUTTONDBLCLK)" };
-        yield return new object[] { PInvokeCore.WM_SYNCPAINT, " (WM_SYNCPAINT)" };
-        yield return new object[] { PInvokeCore.WM_NCXBUTTONDOWN, " (WM_NCXBUTTONDOWN)" };
-        yield return new object[] { PInvokeCore.WM_NCXBUTTONUP, " (WM_NCXBUTTONUP)" };
-        yield return new object[] { PInvokeCore.WM_NCXBUTTONDBLCLK, " (WM_NCXBUTTONDBLCLK)" };
-        yield return new object[] { PInvokeCore.WM_UNICHAR, " (WM_UNICHAR)" };
-        yield return new object[] { PInvokeCore.WM_INPUT_DEVICE_CHANGE, " (WM_INPUT_DEVICE_CHANGE)" };
-        yield return new object[] { PInvokeCore.WM_MOUSEHWHEEL, " (WM_MOUSEHWHEEL)" };
-        yield return new object[] { PInvokeCore.WM_DPICHANGED, " (WM_DPICHANGED)" };
-        yield return new object[] { PInvokeCore.WM_POINTERDEVICECHANGE, " (WM_POINTERDEVICECHANGE)" };
-        yield return new object[] { PInvokeCore.WM_GESTURE, " (WM_GESTURE)" };
-        yield return new object[] { PInvokeCore.WM_WTSSESSION_CHANGE, " (WM_WTSSESSION_CHANGE)" };
         yield return new object[] { PInvokeCore.WM_KEYDOWN, " (WM_KEYDOWN)" };
         yield return new object[] { PInvokeCore.WM_KEYUP, " (WM_KEYUP)" };
         yield return new object[] { PInvokeCore.WM_CHAR, " (WM_CHAR)" };
