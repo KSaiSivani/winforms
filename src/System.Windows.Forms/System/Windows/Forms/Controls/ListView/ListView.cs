@@ -13,6 +13,7 @@ using System.Windows.Forms.VisualStyles;
 using Windows.Win32.System.Variant;
 using Windows.Win32.UI.Accessibility;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
+using Windows.Win32.UI.Controls;
 using static System.Windows.Forms.ListViewGroup;
 using static System.Windows.Forms.ListViewItem;
 using NMHEADERW = Windows.Win32.UI.Controls.NMHEADERW;
@@ -47,6 +48,7 @@ public partial class ListView : Control
     private static readonly object s_rightToLeftLayoutChangedEvent = new();
     private static readonly object s_groupCollapsedStateChangedEvent = new();
     private static readonly object s_groupTaskLinkClickEvent = new();
+    private static readonly object s_columnDropDownClickedEvent = new();
 
     private ItemActivation _activation = ItemActivation.Standard;
     private ListViewAlignment _alignStyle = ListViewAlignment.Top;
@@ -157,6 +159,7 @@ public partial class ListView : Control
     private LabelEditEventHandler? _onAfterLabelEdit;
     private LabelEditEventHandler? _onBeforeLabelEdit;
     private ColumnClickEventHandler? _onColumnClick;
+    private EventHandler<ColumnDropDownClickEventArgs>? _onColumnDropDownClicked;
     private EventHandler? _onItemActivate;
     private ItemCheckedEventHandler? _onItemChecked;
     private ItemDragEventHandler? _onItemDrag;
@@ -514,7 +517,7 @@ public partial class ListView : Control
 
                     _listViewState[LISTVIEWSTATE_checkBoxes] = value;
 
-                    if ((!value && StateImageList is not null && IsHandleCreated) ||
+                    if ((StateImageList is not null && CheckBoxes && !value && IsHandleCreated) ||
                         (!value && Alignment == ListViewAlignment.Left && IsHandleCreated) ||
                         (value && View == View.List && IsHandleCreated) ||
                         (value && (View == View.SmallIcon || View == View.LargeIcon) && IsHandleCreated))
@@ -1979,6 +1982,14 @@ public partial class ListView : Control
     {
         add => _onColumnClick += value;
         remove => _onColumnClick -= value;
+    }
+
+    [SRCategory(nameof(SR.CatAction))]
+    //[SRDescription(nameof(SR.ListViewColumnDropDownClickedDescr))]
+    public event EventHandler<ColumnDropDownClickEventArgs>? ColumnDropDownClicked
+    {
+        add => _onColumnDropDownClicked += value;
+        remove => _onColumnDropDownClicked -= value;
     }
 
     /// <summary>
@@ -3914,6 +3925,12 @@ public partial class ListView : Control
             mask = LVCOLUMNW_MASK.LVCF_FMT | LVCOLUMNW_MASK.LVCF_TEXT | LVCOLUMNW_MASK.LVCF_WIDTH
         };
 
+        if (ch.MinimumWidth > 0)
+        {
+            lvColumn.mask |= LVCOLUMNW_MASK.LVCF_MINWIDTH;
+            lvColumn.cxMin = ch.MinimumWidth;
+        }
+
         if (ch.OwnerListview is not null && ch.ActualImageIndex_Internal != -1)
         {
             lvColumn.mask |= LVCOLUMNW_MASK.LVCF_IMAGE;
@@ -3921,6 +3938,17 @@ public partial class ListView : Control
         }
 
         lvColumn.fmt = (LVCOLUMNW_FORMAT)ch.TextAlign;
+
+        if (ch.FixedWidth)
+        {
+            lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH;
+        }
+
+        if (ch.SplitButton)
+        {
+            lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+        }
+
         lvColumn.cx = ch.Width;
 
         fixed (char* columnHeaderText = ch.Text)
@@ -4440,6 +4468,14 @@ public partial class ListView : Control
     protected virtual void OnColumnClick(ColumnClickEventArgs e)
     {
         _onColumnClick?.Invoke(this, e);
+    }
+
+    /// <summary>
+    ///  Fires the column header drop-down clicked event.
+    /// </summary>
+    protected virtual void OnColumnDropDownClicked(ColumnDropDownClickEventArgs e)
+    {
+        _onColumnDropDownClicked?.Invoke(this, e);
     }
 
     /// <summary>
@@ -5240,7 +5276,7 @@ public partial class ListView : Control
             return;
         }
 
-        Debug.Assert((mask & ~(LVCOLUMNW_MASK.LVCF_FMT | LVCOLUMNW_MASK.LVCF_TEXT | LVCOLUMNW_MASK.LVCF_IMAGE)) == 0, "Unsupported mask in setColumnInfo");
+        Debug.Assert((mask & ~(LVCOLUMNW_MASK.LVCF_FMT | LVCOLUMNW_MASK.LVCF_TEXT | LVCOLUMNW_MASK.LVCF_IMAGE | LVCOLUMNW_MASK.LVCF_MINWIDTH)) == 0, "Unsupported mask in setColumnInfo");
         LVCOLUMNW lvColumn = new LVCOLUMNW
         {
             mask = mask
@@ -5252,6 +5288,17 @@ public partial class ListView : Control
             // This means that we have to include the TextAlign into the column format.
 
             lvColumn.mask |= LVCOLUMNW_MASK.LVCF_FMT;
+            lvColumn.fmt |= (LVCOLUMNW_FORMAT)ch.TextAlign;
+
+            if (ch.FixedWidth)
+            {
+                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH;
+            }
+
+            if (ch.SplitButton)
+            {
+                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+            }
 
             if (ch.ActualImageIndex_Internal > -1)
             {
@@ -5260,8 +5307,26 @@ public partial class ListView : Control
                 lvColumn.iImage = ch.ActualImageIndex_Internal;
                 lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_IMAGE;
             }
-
+        }
+        else if (ch.FixedWidth || ch.SplitButton)
+        {
+            lvColumn.mask |= LVCOLUMNW_MASK.LVCF_FMT;
             lvColumn.fmt |= (LVCOLUMNW_FORMAT)ch.TextAlign;
+
+            if (ch.FixedWidth)
+            {
+                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH;
+            }
+
+            if (ch.SplitButton)
+            {
+                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+            }
+        }
+
+        if ((mask & LVCOLUMNW_MASK.LVCF_MINWIDTH) != 0)
+        {
+            lvColumn.cxMin = ch.MinimumWidth;
         }
 
         IntPtr result;
@@ -5337,6 +5402,11 @@ public partial class ListView : Control
 
         if (IsHandleCreated)
         {
+            if (headerAutoResize == ColumnHeaderAutoResizeStyle.None && columnHeader.MinimumWidth > 0)
+            {
+                width = Math.Max(width, columnHeader.MinimumWidth);
+            }
+
             PInvokeCore.SendMessage(this, PInvoke.LVM_SETCOLUMNWIDTH, (WPARAM)columnIndex, LPARAM.MAKELPARAM(width, 0));
         }
 
@@ -5360,7 +5430,32 @@ public partial class ListView : Control
     {
         if (IsHandleCreated)
         {
+            if (_columnHeaders is not null && index < _columnHeaders.Length)
+            {
+                width = Math.Max(width, _columnHeaders[index].MinimumWidth);
+            }
+
             PInvokeCore.SendMessage(this, PInvoke.LVM_SETCOLUMNWIDTH, (WPARAM)index, LPARAM.MAKELPARAM(width, 0));
+        }
+    }
+
+    private void EnforceColumnMinimumWidth(int columnIndex)
+    {
+        if (!IsHandleCreated || _columnHeaders is null || (uint)columnIndex >= (uint)_columnHeaders.Length)
+        {
+            return;
+        }
+
+        ColumnHeader columnHeader = _columnHeaders[columnIndex];
+        if (columnHeader.MinimumWidth <= 0)
+        {
+            return;
+        }
+
+        int width = (int)PInvokeCore.SendMessage(this, PInvoke.LVM_GETCOLUMNWIDTH, (WPARAM)columnIndex);
+        if (width < columnHeader.MinimumWidth)
+        {
+            SetColumnWidth(columnIndex, columnHeader.MinimumWidth);
         }
     }
 
@@ -6104,13 +6199,25 @@ public partial class ListView : Control
             // Reset our tracking information for the new BEGINTRACK cycle.
             _listViewState1[LISTVIEWSTATE1_cancelledColumnWidthChanging] = false;
             _newWidthForColumnWidthChangingCancelled = -1;
-            _listViewState1[LISTVIEWSTATE1_cancelledColumnWidthChanging] = false;
 
             NMHEADERW* nmheader = (NMHEADERW*)(nint)m.LParamInternal;
             if (_columnHeaders is not null && _columnHeaders.Length > nmheader->iItem)
             {
                 _columnHeaderClicked = _columnHeaders[nmheader->iItem];
                 _columnHeaderClickedWidth = _columnHeaderClicked.Width;
+
+                if (_columnHeaderClicked.MinimumWidth > 0)
+                {
+                    SetColumnInfo(LVCOLUMNW_MASK.LVCF_MINWIDTH, _columnHeaderClicked);
+                    EnforceColumnMinimumWidth(nmheader->iItem);
+                }
+
+                if (_columnHeaderClicked.FixedWidth)
+                {
+                    _listViewState[LISTVIEWSTATE_headerControlTracking] = false;
+                    m.ResultInternal = (LRESULT)1;
+                    return true;
+                }
             }
             else
             {
@@ -6126,13 +6233,27 @@ public partial class ListView : Control
             if (_columnHeaders is not null && nmheader->iItem < _columnHeaders.Length &&
                 (_listViewState[LISTVIEWSTATE_headerControlTracking] || _listViewState[LISTVIEWSTATE_headerDividerDblClick]))
             {
-                int newColumnWidth = ((nmheader->pitem->mask & HDI_MASK.HDI_WIDTH) != 0) ? nmheader->pitem->cxy : -1;
+                bool hasWidth = (nmheader->pitem->mask & HDI_MASK.HDI_WIDTH) != 0;
+                int newColumnWidth = hasWidth ? nmheader->pitem->cxy : -1;
+                ColumnHeader columnHeader = _columnHeaders[nmheader->iItem];
+                bool belowMinimumWidth = hasWidth && columnHeader.MinimumWidth > 0 && newColumnWidth < columnHeader.MinimumWidth;
+
+                if (belowMinimumWidth)
+                {
+                    newColumnWidth = columnHeader.MinimumWidth;
+                    nmheader->pitem->cxy = columnHeader.MinimumWidth;
+                }
+
                 ColumnWidthChangingEventArgs colWidthChanging = new(nmheader->iItem, newColumnWidth);
                 OnColumnWidthChanging(colWidthChanging);
                 m.ResultInternal = (LRESULT)(colWidthChanging.Cancel ? 1 : 0);
                 if (colWidthChanging.Cancel)
                 {
-                    nmheader->pitem->cxy = colWidthChanging.NewWidth;
+                    int cancelledWidth = columnHeader.MinimumWidth > 0
+                        ? Math.Max(colWidthChanging.NewWidth, columnHeader.MinimumWidth)
+                        : colWidthChanging.NewWidth;
+
+                    nmheader->pitem->cxy = cancelledWidth;
 
                     // We are called inside HDN_DIVIDERDBLCLICK.
                     // Turn off the compensation that our processing of HDN_DIVIDERDBLCLICK would otherwise add.
@@ -6142,9 +6263,15 @@ public partial class ListView : Control
                     }
 
                     _listViewState1[LISTVIEWSTATE1_cancelledColumnWidthChanging] = true;
-                    _newWidthForColumnWidthChangingCancelled = colWidthChanging.NewWidth;
+                    _newWidthForColumnWidthChangingCancelled = cancelledWidth;
 
                     // skip default processing
+                    return true;
+                }
+                else if (belowMinimumWidth)
+                {
+                    SetColumnWidth(nmheader->iItem, columnHeader.MinimumWidth);
+                    m.ResultInternal = (LRESULT)1;
                     return true;
                 }
                 else
@@ -6154,12 +6281,38 @@ public partial class ListView : Control
             }
         }
 
+        if (nmhdr->code == PInvoke.HDN_FIRST - 18)
+        {
+            NMHEADERW* nmheader = (NMHEADERW*)(nint)m.LParamInternal;
+            if (_columnHeaders is not null && nmheader->iItem < _columnHeaders.Length)
+            {
+                int columnIndex = nmheader->iItem;
+                Point screenLocation = Cursor.Position;
+
+                if (nmheader->pitem is not null)
+                {
+                    RECT itemRect = default;
+                    HWND hwndHeader = (HWND)PInvokeCore.SendMessage(this, PInvoke.LVM_GETHEADER);
+
+                    if (!hwndHeader.IsNull && PInvokeCore.SendMessage(hwndHeader, PInvoke.HDM_GETITEMRECT, (WPARAM)columnIndex, ref itemRect) != IntPtr.Zero)
+                    {
+                        screenLocation = PointToScreen(new Point(itemRect.left, itemRect.bottom));
+                    }
+                }
+
+                OnColumnDropDownClicked(new ColumnDropDownClickEventArgs(columnIndex, screenLocation));
+                m.ResultInternal = (LRESULT)0;
+                return true;
+            }
+        }
+
         if ((nmhdr->code == PInvoke.HDN_ITEMCHANGEDW) &&
             !_listViewState[LISTVIEWSTATE_headerControlTracking])
         {
             NMHEADERW* nmheader = (NMHEADERW*)(nint)m.LParamInternal;
             if (_columnHeaders is not null && nmheader->iItem < _columnHeaders.Length)
             {
+                EnforceColumnMinimumWidth(nmheader->iItem);
                 int w = _columnHeaders[nmheader->iItem].Width;
 
                 if (_columnHeaderClicked is null ||
@@ -6210,12 +6363,13 @@ public partial class ListView : Control
         {
             Debug.Assert(_listViewState[LISTVIEWSTATE_headerControlTracking], "HDN_ENDTRACK and HDN_BEGINTRACK are out of sync.");
             _listViewState[LISTVIEWSTATE_headerControlTracking] = false;
+
+            NMHEADERW* nmheader = (NMHEADERW*)(nint)m.LParamInternal;
             if (_listViewState1[LISTVIEWSTATE1_cancelledColumnWidthChanging])
             {
                 m.ResultInternal = (LRESULT)1;
                 if (_newWidthForColumnWidthChangingCancelled != -1)
                 {
-                    NMHEADERW* nmheader = (NMHEADERW*)(nint)m.LParamInternal;
                     if (_columnHeaders is not null && _columnHeaders.Length > nmheader->iItem)
                     {
                         _columnHeaders[nmheader->iItem].Width = _newWidthForColumnWidthChangingCancelled;
@@ -6230,6 +6384,7 @@ public partial class ListView : Control
             }
             else
             {
+                EnforceColumnMinimumWidth(nmheader->iItem);
                 return false;
             }
         }

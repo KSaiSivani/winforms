@@ -24,6 +24,9 @@ public partial class ColumnHeader : Component, ICloneable
     internal string _name;
     internal int _width = 60;
     internal int _correspondingListViewSubItemIndex = -1;
+    internal int _minimumWidth;
+    internal bool _fixedWidth;
+    internal bool _splitButton;
 
     // Use TextAlign property instead of this member variable, always
     private HorizontalAlignment _textAlign = HorizontalAlignment.Left;
@@ -257,6 +260,88 @@ public partial class ColumnHeader : Component, ICloneable
     }
 
     /// <summary>
+    ///  Gets or sets the minimum width, in pixels, that the column can be resized to.
+    /// </summary>
+    //[SRDescription(nameof(SR.ColumnHeaderMinimumWidthDescr))]
+    [Localizable(true)]
+    [DefaultValue(0)]
+    public int MinimumWidth
+    {
+        get => _minimumWidth;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, 0);
+
+            if (_minimumWidth == value)
+            {
+                return;
+            }
+
+            _minimumWidth = value;
+
+            if (ListView is not null && ListView.IsHandleCreated)
+            {
+                ListView.SetColumnInfo(LVCOLUMNW_MASK.LVCF_MINWIDTH, this);
+
+                // Keep the native width aligned with the minimum so header tracking cannot fall below it.
+                if (_width < _minimumWidth)
+                {
+                    _width = _minimumWidth;
+                    ListView.SetColumnWidth(Index, ColumnHeaderAutoResizeStyle.None);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    ///  Gets or sets a value indicating whether the column is fixed width.
+    /// </summary>
+   // [SRDescription(nameof(SR.ColumnHeaderFixedWidthDescr))]
+    [DefaultValue(false)]
+    public bool FixedWidth
+    {
+        get => _fixedWidth;
+        set
+        {
+            if (_fixedWidth == value)
+            {
+                return;
+            }
+
+            _fixedWidth = value;
+
+            if (ListView is not null && ListView.IsHandleCreated)
+            {
+                ListView.SetColumnInfo(LVCOLUMNW_MASK.LVCF_FMT, this);
+            }
+        }
+    }
+
+    /// <summary>
+    ///  Gets or sets a value indicating whether the column shows a split button in the header.
+    /// </summary>
+   // [SRDescription(nameof(SR.ColumnHeaderSplitButtonDescr))]
+    [DefaultValue(false)]
+    public bool SplitButton
+    {
+        get => _splitButton;
+        set
+        {
+            if (_splitButton == value)
+            {
+                return;
+            }
+
+            _splitButton = value;
+
+            if (ListView is not null && ListView.IsHandleCreated)
+            {
+                ListView.SetColumnInfo(LVCOLUMNW_MASK.LVCF_FMT, this);
+            }
+        }
+    }
+
+    /// <summary>
     ///  Returns the ListView control that this column is displayed in. May be null
     /// </summary>
     [Browsable(false)]
@@ -442,6 +527,9 @@ public partial class ColumnHeader : Component, ICloneable
         columnHeader._text = _text;
         columnHeader.Width = _width;
         columnHeader._textAlign = TextAlign;
+        columnHeader._minimumWidth = _minimumWidth;
+        columnHeader._fixedWidth = _fixedWidth;
+        columnHeader._splitButton = _splitButton;
         return columnHeader;
     }
 
