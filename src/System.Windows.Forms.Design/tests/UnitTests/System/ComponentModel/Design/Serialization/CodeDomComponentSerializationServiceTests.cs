@@ -1501,6 +1501,81 @@ public class CodeDomComponentSerializationServiceTests
         Assert.Empty(Assert.IsType<List<string>>(info.GetValue("Shim", typeof(List<string>))));
     }
 
+    [Fact]
+    public void Deserialize_InvokeClosedStore_ReturnsDeserializedObjects()
+    {
+        CodeDomComponentSerializationService service = new();
+        SerializationStore store = service.CreateStore();
+
+        var mockSite = GetDefaultMockSite("name1");
+        DataClass value = new()
+        {
+            IntValue = 1,
+            StringValue = "Value",
+            Site = mockSite.Object
+        };
+
+        service.Serialize(store, value);
+        store.Close();
+
+        ICollection result = service.Deserialize(store);
+        List<object> items = Assert.IsType<List<object>>(result);
+        DataClass deserialized = Assert.IsType<DataClass>(Assert.Single(items));
+        Assert.Equal(1, deserialized.IntValue);
+        Assert.Equal("Value", deserialized.StringValue);
+    }
+
+    [Fact]
+    public void Deserialize_WithContainer_AddsComponentsToContainer()
+    {
+        CodeDomComponentSerializationService service = new();
+        SerializationStore store = service.CreateStore();
+
+        var mockSite = GetDefaultMockSite("name2");
+        DataClass value = new()
+        {
+            IntValue = 2,
+            StringValue = "OtherValue",
+            Site = mockSite.Object
+        };
+
+        service.Serialize(store, value);
+        store.Close();
+
+        using Container container = new();
+        ICollection result = service.Deserialize(store, container);
+        List<object> items = Assert.IsType<List<object>>(result);
+        DataClass deserialized = Assert.IsType<DataClass>(Assert.Single(items));
+        Assert.Equal(2, deserialized.IntValue);
+        Assert.Equal("OtherValue", deserialized.StringValue);
+        Assert.Equal(1, container.Components.Count);
+    }
+
+    [Fact]
+    public void DeserializeTo_ExistingComponent_AppliesValuesToContainerComponent()
+    {
+        CodeDomComponentSerializationService service = new();
+        SerializationStore store = service.CreateStore();
+
+        var mockSite = GetDefaultMockSite("name");
+        DataClass value = new()
+        {
+            IntValue = 1,
+            StringValue = "Value",
+            Site = mockSite.Object
+        };
+
+        service.Serialize(store, value);
+        store.Close();
+
+        using Container container = new();
+        DataClass existing = new();
+        container.Add(existing, "name");
+        service.DeserializeTo(store, container, validateRecycledTypes: true, applyDefaults: true);
+        Assert.Equal(1, existing.IntValue);
+        Assert.Equal("Value", existing.StringValue);
+    }
+
     [Theory]
     [InlineData(null, 1, "^object_........_...._...._...._............$")]
     [InlineData("", 1, "^object_........_...._...._...._............$")]
