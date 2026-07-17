@@ -20,4 +20,19 @@ internal static partial class PInvoke
             return DrawTextEx(hdc, (PWSTR)c, lpchText.Length, lprc, format, lpdtp);
         }
     }
+
+    public static unsafe int DrawTextEx(
+        HDC hdc,
+        Span<char> lpchText,
+        RECT* lprc,
+        DRAW_TEXT_FORMAT format,
+        DRAWTEXTPARAMS* lpdtp)
+    {
+        lpdtp->cbSize = (uint)sizeof(DRAWTEXTPARAMS);
+
+        fixed (char* c = lpchText)
+        {
+            return DrawTextEx(hdc, (PWSTR)c, lpchText.Length, lprc, format, lpdtp);
+        }
+    }
 }

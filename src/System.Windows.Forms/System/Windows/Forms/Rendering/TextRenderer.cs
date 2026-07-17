@@ -1,6 +1,7 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Buffers;
 using System.Drawing;
 using System.Drawing.Text;
 
@@ -366,6 +367,284 @@ public static class TextRenderer
         hdc.DrawText(text, hfont, bounds, foreColor, flags, backColor);
     }
 
+    // Internal helpers to provide output text when ellipses flags are used. These may pin and pass
+    // mutable buffers to the native DrawTextEx via the HDC extension methods (which accept ReadOnlySpan<char>
+    // but will operate on the underlying buffer when DT_MODIFYSTRING is set).
+    private static string? DrawTextInternalWithOutput(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Point pt,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags)
+        => DrawTextInternalWithOutput(dc, text, font, new Rectangle(pt, MaxSize), foreColor, backColor, flags);
+
+    private static string? DrawTextInternalWithOutput(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Rectangle bounds,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags)
+    {
+        // Preserve original behavior for null/empty.
+        if (string.IsNullOrEmpty(text))
+        {
+            // Still draw using existing behavior.
+            DrawText(dc, text, font, bounds, foreColor, backColor, flags);
+            return text;
+        }
+
+        int length = text.Length;
+        // Rent a buffer with room for possible null-termination.
+        char[]? buffer = ArrayPool<char>.Shared.Rent(length + 1);
+        try
+        {
+            Span<char> span = buffer.AsSpan(0, length + 1);
+            text.AsSpan().CopyTo(span);
+
+            DrawTextInternalWithOutput(dc, span, font, bounds, foreColor, backColor, flags, span, out int outputLength);
+
+            return new string(span.Slice(0, outputLength));
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer!);
+        }
+    }
+
+    private static void DrawTextInternalWithOutput(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Point pt,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+        => DrawTextInternalWithOutput(dc, text, font, new Rectangle(pt, MaxSize), foreColor, backColor, flags, outputTextBuffer, out outputTextLength);
+
+    private static void DrawTextInternalWithOutput(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Rectangle bounds,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        ArgumentNullException.ThrowIfNull(dc);
+
+        // Avoid creating the HDC, etc if we're not going to do any drawing
+        if (text.IsEmpty || foreColor == Color.Transparent)
+        {
+            outputTextLength = 0;
+            return;
+        }
+
+        bool wantsEllipsis = flags.HasFlag(TextFormatFlags.PathEllipsis) || flags.HasFlag(TextFormatFlags.WordEllipsis);
+
+        if (!wantsEllipsis)
+        {
+            if (outputTextBuffer.Length < text.Length)
+            {
+                throw new ArgumentException("The outputTextBuffer must be at least as long as the input.", nameof(outputTextBuffer));
+            }
+
+            text.CopyTo(outputTextBuffer);
+            outputTextLength = text.Length;
+
+            // Draw using existing path.
+            DrawTextInternal(dc, text, font, bounds, foreColor, backColor, flags);
+            return;
+        }
+
+        if (outputTextBuffer.Length < text.Length)
+        {
+            throw new ArgumentException("The outputTextBuffer must be at least as long as the input.", nameof(outputTextBuffer));
+        }
+
+        // This MUST come before retrieving the HDC, which locks the Graphics object
+        FONT_QUALITY quality = FontQualityFromTextRenderingHint(dc);
+
+        using DeviceContextHdcScope hdc = dc.ToHdcScope(GetApplyStateFlags(dc, flags));
+
+        // Copy into output buffer then call native DrawTextEx with DT_MODIFYSTRING set so Windows writes the ellipsized text into the buffer.
+        Span<char> dest = outputTextBuffer.Slice(0, outputTextBuffer.Length);
+        text.CopyTo(dest);
+
+        TextFormatFlags flagsWithModify = flags | TextFormatFlags.ModifyString;
+
+        using var hfont = GetFontOrHdcHFONT(font, quality, hdc);
+        hdc.HDC.DrawText(dest, hfont, bounds, foreColor, flagsWithModify, backColor);
+
+        int idx = dest.IndexOf('\0');
+        outputTextLength = idx == -1 ? text.Length : idx;
+    }
+
+    private static Size MeasureTextInternalWithOutput(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        ArgumentNullException.ThrowIfNull(dc);
+
+        if (text.IsEmpty)
+        {
+            outputTextLength = 0;
+            return Size.Empty;
+        }
+
+        bool wantsEllipsis = flags.HasFlag(TextFormatFlags.PathEllipsis) || flags.HasFlag(TextFormatFlags.WordEllipsis);
+
+        if (!wantsEllipsis)
+        {
+            if (outputTextBuffer.Length < text.Length)
+            {
+                throw new ArgumentException("The outputTextBuffer must be at least as long as the input.", nameof(outputTextBuffer));
+            }
+
+            text.CopyTo(outputTextBuffer);
+            outputTextLength = text.Length;
+            return MeasureTextInternal(dc, text, font, proposedSize, flags);
+        }
+
+        if (outputTextBuffer.Length < text.Length)
+        {
+            throw new ArgumentException("The outputTextBuffer must be at least as long as the input.", nameof(outputTextBuffer));
+        }
+
+        // This MUST come before retrieving the HDC, which locks the Graphics object
+        FONT_QUALITY quality = FontQualityFromTextRenderingHint(dc);
+
+        using DeviceContextHdcScope hdc = dc.ToHdcScope(GetApplyStateFlags(dc, flags));
+        using var hfont = GetFontOrHdcHFONT(font, quality, hdc);
+
+        Span<char> dest = outputTextBuffer.Slice(0, outputTextBuffer.Length);
+        text.CopyTo(dest);
+
+        TextFormatFlags flagsWithModify = flags | TextFormatFlags.ModifyString;
+
+        Size size = hdc.HDC.MeasureText(dest, hfont, proposedSize, flagsWithModify);
+
+        int idx = dest.IndexOf('\0');
+        outputTextLength = idx == -1 ? text.Length : idx;
+
+        return size;
+    }
+
+    private static Size MeasureTextInternalWithOutput(
+        ReadOnlySpan<char> text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        if (text.IsEmpty)
+        {
+            outputTextLength = 0;
+            return Size.Empty;
+        }
+
+        bool wantsEllipsis = flags.HasFlag(TextFormatFlags.PathEllipsis) || flags.HasFlag(TextFormatFlags.WordEllipsis);
+
+        if (!wantsEllipsis)
+        {
+            if (outputTextBuffer.Length < text.Length)
+            {
+                throw new ArgumentException("The outputTextBuffer must be at least as long as the input.", nameof(outputTextBuffer));
+            }
+
+            text.CopyTo(outputTextBuffer);
+            outputTextLength = text.Length;
+            return MeasureTextInternal(text, font, proposedSize, flags);
+        }
+
+        if (outputTextBuffer.Length < text.Length)
+        {
+            throw new ArgumentException("The outputTextBuffer must be at least as long as the input.", nameof(outputTextBuffer));
+        }
+
+        // Use screen HDC path for measurement.
+        using var screen = GdiCache.GetScreenHdc();
+        using var hfont = GetFontOrHdcHFONT(font, FONT_QUALITY.DEFAULT_QUALITY, screen);
+
+        Span<char> dest = outputTextBuffer.Slice(0, outputTextBuffer.Length);
+        text.CopyTo(dest);
+
+        TextFormatFlags flagsWithModify = flags | TextFormatFlags.ModifyString;
+
+        Size size = screen.HDC.MeasureText(dest, hfont, proposedSize, flagsWithModify);
+
+        int idx = dest.IndexOf('\0');
+        outputTextLength = idx == -1 ? text.Length : idx;
+
+        return size;
+    }
+
+    private static string? MeasureTextInternalWithOutput(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        int length = text.Length;
+        char[]? buffer = ArrayPool<char>.Shared.Rent(length + 1);
+        try
+        {
+            Span<char> span = buffer.AsSpan(0, length + 1);
+            text.AsSpan().CopyTo(span);
+            _ = MeasureTextInternalWithOutput(dc, span, font, proposedSize, flags, span, out int outputLength);
+            return new string(span.Slice(0, outputLength));
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer!);
+        }
+    }
+
+    private static string? MeasureTextInternalWithOutput(
+        string? text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        int length = text.Length;
+        char[]? buffer = ArrayPool<char>.Shared.Rent(length + 1);
+        try
+        {
+            Span<char> span = buffer.AsSpan(0, length + 1);
+            text.AsSpan().CopyTo(span);
+            _ = MeasureTextInternalWithOutput(span, font, proposedSize, flags, span, out int outputLength);
+            return new string(span.Slice(0, outputLength));
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer!);
+        }
+    }
+
     private static TextFormatFlags BlockModifyString(TextFormatFlags flags)
     {
 #pragma warning disable CS0618 // Type or member is obsolete - ModifyString is obsolete
@@ -474,6 +753,97 @@ public static class TextRenderer
     /// <exception cref="ArgumentNullException"><paramref name="dc"/> is null.</exception>
     public static Size MeasureText(IDeviceContext dc, ReadOnlySpan<char> text, Font? font, Size proposedSize)
         => MeasureTextInternal(dc, text, font, proposedSize);
+
+    // Proposed overloads: minimal forwarding implementations. Full ellipses-output behavior
+    // will be implemented in follow-up steps.
+    public static void DrawText(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Point pt,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        outputText = DrawTextInternalWithOutput(dc, text, font, pt, foreColor, backColor, flags);
+    }
+
+    public static void DrawText(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Point pt,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        DrawTextInternalWithOutput(dc, text, font, pt, foreColor, backColor, flags, outputTextBuffer, out outputTextLength);
+    }
+
+    public static void DrawText(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Rectangle bounds,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        outputText = DrawTextInternalWithOutput(dc, text, font, bounds, foreColor, backColor, flags);
+    }
+
+    public static void DrawText(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Rectangle bounds,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        DrawTextInternalWithOutput(dc, text, font, bounds, foreColor, backColor, flags, outputTextBuffer, out outputTextLength);
+    }
+
+    public static Size MeasureText(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        outputText = MeasureTextInternalWithOutput(dc, text, font, proposedSize, flags);
+        return MeasureTextInternal(dc, text, font, proposedSize, flags);
+    }
+
+    public static Size MeasureText(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        return MeasureTextInternalWithOutput(dc, text, font, proposedSize, flags, outputTextBuffer, out outputTextLength);
+    }
+
+    public static Size MeasureText(string? text, Font? font, Size proposedSize, TextFormatFlags flags, out string? outputText)
+    {
+        outputText = MeasureTextInternalWithOutput(text, font, proposedSize, flags);
+        return MeasureTextInternal(text, font, proposedSize, flags);
+    }
+
+    public static Size MeasureText(ReadOnlySpan<char> text, Font? font, Size proposedSize, TextFormatFlags flags, Span<char> outputTextBuffer, out int outputTextLength)
+    {
+        return MeasureTextInternalWithOutput(text, font, proposedSize, flags, outputTextBuffer, out outputTextLength);
+    }
 
     public static Size MeasureText(
         IDeviceContext dc,
