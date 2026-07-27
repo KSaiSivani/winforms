@@ -183,7 +183,7 @@ public sealed class FolderBrowserDialog : CommonDialog
     /// </summary>
     [SRCategory(nameof(SR.CatFolderBrowsing))]
     [DefaultValue("")]
-    [Editor("System.Windows.Forms.Design.InitialDirectoryEditor, System.Windows.Forms.Design, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089", typeof(UITypeEditor))]
+    [Editor($"System.Windows.Forms.Design.FolderNameEditor, {Assemblies.SystemDesign}", typeof(UITypeEditor))]
     [SRDescription(nameof(SR.FDinitialDirDescr))]
     public string InitialDirectory
     {

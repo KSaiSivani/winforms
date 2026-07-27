@@ -48,29 +48,23 @@ public partial class FolderNameEditor
         /// <summary>
         ///  Shows the folder browser dialog with the specified owner.
         /// </summary>
-        public unsafe DialogResult ShowDialog(IWin32Window? owner)
+        public DialogResult ShowDialog(IWin32Window? owner)
         {
-            uint mergedOptions = (uint)Style | PInvoke.BIF_NEWDIALOGSTYLE;
-            if ((mergedOptions & (int)PInvoke.BIF_NEWDIALOGSTYLE) != 0)
+            using FolderBrowserDialog dialog = new()
             {
-                Application.OleRequired();
+                Description = _descriptionText,
+                SelectedPath = DirectoryPath,
+                RootFolder = (Environment.SpecialFolder)StartLocation,
+                AutoUpgradeEnabled = true
+            };
+
+            DialogResult result = owner is not null ? dialog.ShowDialog(owner) : dialog.ShowDialog();
+            if (result == DialogResult.OK)
+            {
+                DirectoryPath = dialog.SelectedPath ?? string.Empty;
             }
 
-            string? folder = FolderBrowserHelper.BrowseForFolder(
-                _descriptionText,
-                (int)StartLocation,
-                mergedOptions,
-                owner is not null ? (HWND)owner.Handle : PInvoke.GetActiveWindow(),
-                callback: null,
-                lParam: default);
-
-            if (folder is not null)
-            {
-                DirectoryPath = folder;
-                return DialogResult.OK;
-            }
-
-            return DialogResult.Cancel;
+            return result;
         }
     }
 }
