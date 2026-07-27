@@ -160,6 +160,369 @@ public static unsafe partial class ControlPaint
         return result;
     }
 
+    // IDeviceContext overloads
+    public static void DrawBorder(IDeviceContext deviceContext, Rectangle bounds, Color color, ButtonBorderStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+
+        switch (style)
+        {
+            case ButtonBorderStyle.None:
+                // nothing
+                break;
+            case ButtonBorderStyle.Dotted:
+            case ButtonBorderStyle.Dashed:
+            case ButtonBorderStyle.Solid:
+                DrawBorderSimple(deviceContext, bounds, color, style);
+                break;
+            case ButtonBorderStyle.Inset:
+            case ButtonBorderStyle.Outset:
+                {
+                    Graphics? g = deviceContext.TryGetGraphics(create: true);
+                    if (g is not null)
+                    {
+                        DrawBorderComplex(g, bounds, color, style);
+                    }
+                    else
+                    {
+                        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+                        using Graphics gg = hdc.HDC.CreateGraphics();
+                        DrawBorderComplex(gg, bounds, color, style);
+                    }
+
+                    break;
+                }
+
+            default:
+                break;
+        }
+    }
+
+    // Note: the detailed multi-edge DrawBorder overload is implemented later in this file and is public.
+
+    public static void DrawBorder3D(IDeviceContext deviceContext, int x, int y, int width, int height)
+        => DrawBorder3D(deviceContext, x, y, width, height, Border3DStyle.Etched, Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom);
+
+    public static void DrawBorder3D(IDeviceContext deviceContext, int x, int y, int width, int height, Border3DStyle style)
+        => DrawBorder3D(deviceContext, x, y, width, height, style, Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom);
+
+    public static void DrawBorder3D(IDeviceContext deviceContext, int x, int y, int width, int height, Border3DStyle style, Border3DSide sides)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+
+        DRAWEDGE_FLAGS edge = (DRAWEDGE_FLAGS)((uint)style & 0x0F);
+        DRAW_EDGE_FLAGS flags = (DRAW_EDGE_FLAGS)sides | (DRAW_EDGE_FLAGS)((uint)style & ~0x0F);
+
+        RECT rc = new Rectangle(x, y, width, height);
+
+        if (flags.HasFlag((DRAW_EDGE_FLAGS)Border3DStyle.Adjust))
+        {
+            Size sz = SystemInformation.Border3DSize;
+            rc.left -= sz.Width;
+            rc.right += sz.Width;
+            rc.top -= sz.Height;
+            rc.bottom += sz.Height;
+            flags &= ~(DRAW_EDGE_FLAGS)Border3DStyle.Adjust;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawEdge(hdc, ref rc, edge, flags);
+    }
+
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle)
+        => DrawBorder3D(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
+
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle, Border3DStyle style)
+        => DrawBorder3D(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, style);
+
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle, Border3DStyle style, Border3DSide sides)
+        => DrawBorder3D(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, style, sides);
+
+    public static void DrawButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawButton(g, x, y, width, height, state);
+            return;
+        }
+
+        RECT rc = new Rectangle(0, 0, width, height);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawFrameControl(hdc, ref rc, (uint)DFC_TYPE.DFC_BUTTON, (uint)(DFCS_STATE.DFCS_BUTTONPUSH | (DFCS_STATE)state));
+    }
+
+    public static void DrawButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    public static void DrawCaptionButton(IDeviceContext deviceContext, int x, int y, int width, int height, CaptionButton button, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawCaptionButton(g, x, y, width, height, button, state);
+            return;
+        }
+
+        RECT rc = new Rectangle(0, 0, width, height);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawFrameControl(hdc, ref rc, (uint)DFC_TYPE.DFC_CAPTION, (uint)((DFCS_STATE)button | (DFCS_STATE)state));
+    }
+
+    public static void DrawCaptionButton(IDeviceContext deviceContext, Rectangle rectangle, CaptionButton button, ButtonState state)
+        => DrawCaptionButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, button, state);
+
+    public static void DrawCheckBox(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawCheckBox(g, x, y, width, height, state);
+            return;
+        }
+
+        if ((state & ButtonState.Flat) == ButtonState.Flat)
+        {
+            // fallback to Graphics path via HDC-created Graphics
+            using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+            using Graphics gg = hdc.HDC.CreateGraphics();
+            DrawFlatCheckBox(gg, new Rectangle(x, y, width, height), state);
+        }
+        else
+        {
+            RECT rc = new Rectangle(0, 0, width, height);
+            using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+            PInvoke.DrawFrameControl(hdc, ref rc, (uint)DFC_TYPE.DFC_BUTTON, (uint)(DFCS_STATE.DFCS_BUTTONCHECK | (DFCS_STATE)state));
+        }
+    }
+
+    public static void DrawCheckBox(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawCheckBox(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    public static void DrawComboButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawComboButton(g, x, y, width, height, state);
+            return;
+        }
+
+        RECT rc = new Rectangle(0, 0, width, height);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawFrameControl(hdc, ref rc, (uint)DFC_TYPE.DFC_SCROLL, (uint)(DFCS_STATE.DFCS_SCROLLCOMBOBOX | (DFCS_STATE)state));
+    }
+
+    public static void DrawComboButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawComboButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    public static void DrawContainerGrabHandle(IDeviceContext deviceContext, Rectangle bounds)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawContainerGrabHandle(g, bounds);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        // Create a temporary Graphics to draw using the existing implementation
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawContainerGrabHandle(gg, bounds);
+    }
+
+    public static void DrawFocusRectangle(IDeviceContext deviceContext, Rectangle rectangle)
+        => DrawFocusRectangle(deviceContext, rectangle, SystemColors.ControlText, SystemColors.Control);
+
+    public static void DrawFocusRectangle(IDeviceContext deviceContext, Rectangle rectangle, Color foreColor, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawFocusRectangle(g, rectangle, foreColor, backColor);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawFocusRectangle(gg, rectangle, foreColor, backColor);
+    }
+
+    public static void DrawGrabHandle(IDeviceContext deviceContext, Rectangle rectangle, bool primary, bool enabled)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawGrabHandle(g, rectangle, primary, enabled);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawGrabHandle(gg, rectangle, primary, enabled);
+    }
+
+    public static void DrawGrid(IDeviceContext deviceContext, Rectangle area, Size pixelsBetweenDots, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawGrid(g, area, pixelsBetweenDots, backColor);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawGrid(gg, area, pixelsBetweenDots, backColor);
+    }
+
+    public static void DrawLockedFrame(IDeviceContext deviceContext, Rectangle rectangle, bool primary)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawLockedFrame(g, rectangle, primary);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawLockedFrame(gg, rectangle, primary);
+    }
+
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, int x, int y, int width, int height, MenuGlyph glyph)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawMenuGlyph(g, x, y, width, height, glyph);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawMenuGlyph(gg, x, y, width, height, glyph);
+    }
+
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, int x, int y, int width, int height, MenuGlyph glyph, Color foreColor, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawMenuGlyph(g, x, y, width, height, glyph, foreColor, backColor);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawMenuGlyph(gg, x, y, width, height, glyph, foreColor, backColor);
+    }
+
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, Rectangle rectangle, MenuGlyph glyph)
+        => DrawMenuGlyph(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, glyph);
+
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, Rectangle rectangle, MenuGlyph glyph, Color foreColor, Color backColor)
+        => DrawMenuGlyph(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, glyph, foreColor, backColor);
+
+    public static void DrawMixedCheckBox(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+        => DrawMixedCheckBox(deviceContext, new Rectangle(x, y, width, height), state);
+
+    public static void DrawMixedCheckBox(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawMixedCheckBox(g, rectangle, state);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawMixedCheckBox(gg, rectangle, state);
+    }
+
+    public static void DrawRadioButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+        => DrawRadioButton(deviceContext, new Rectangle(x, y, width, height), state);
+
+    public static void DrawRadioButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawRadioButton(g, rectangle, state);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawRadioButton(gg, rectangle, state);
+    }
+
+    public static void DrawScrollButton(IDeviceContext deviceContext, int x, int y, int width, int height, ScrollButton button, ButtonState state)
+        => DrawScrollButton(deviceContext, new Rectangle(x, y, width, height), button, state);
+
+    public static void DrawScrollButton(IDeviceContext deviceContext, Rectangle rectangle, ScrollButton button, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawScrollButton(g, rectangle, button, state);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawScrollButton(gg, rectangle, button, state);
+    }
+
+    public static void DrawSelectionFrame(IDeviceContext deviceContext, bool active, Rectangle outsideRect, Rectangle insideRect, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawSelectionFrame(g, active, outsideRect, insideRect, backColor);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawSelectionFrame(gg, active, outsideRect, insideRect, backColor);
+    }
+
+    // IDeviceContext overloads for DrawSizeGrip are implemented below as a single public method.
+
+    public static void DrawVisualStyleBorder(IDeviceContext deviceContext, Rectangle bounds)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawVisualStyleBorder(g, bounds);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawVisualStyleBorder(gg, bounds);
+    }
+
+
+
     /// <summary>
     ///  Returns a color appropriate for certain elements that are ControlDark in normal color schemes, but for
     ///  which ControlDark does not work in high contrast color schemes.
@@ -595,7 +958,7 @@ public static unsafe partial class ControlPaint
             bottomColor, bottomWidth, bottomStyle);
     }
 
-    internal static unsafe void DrawBorder(
+    public static unsafe void DrawBorder(
         IDeviceContext deviceContext,
         Rectangle bounds,
         Color leftColor, int leftWidth, ButtonBorderStyle leftStyle,
@@ -1969,7 +2332,7 @@ public static unsafe partial class ControlPaint
         }
     }
 
-    internal static void DrawSizeGrip(
+    public static void DrawSizeGrip(
         IDeviceContext deviceContext,
         Color backColor,
         int x, int y, int width, int height)
