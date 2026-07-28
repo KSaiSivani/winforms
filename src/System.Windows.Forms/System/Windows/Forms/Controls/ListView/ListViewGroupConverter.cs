@@ -20,7 +20,7 @@ internal class ListViewGroupConverter : TypeConverter
     /// </summary>
     public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
     {
-        if (sourceType == typeof(string) && context is not null && context.Instance is ListViewItem)
+        if (sourceType == typeof(string) && context is not null && GetListViewFromContext(context) is not null)
         {
             return true;
         }
@@ -39,7 +39,7 @@ internal class ListViewGroupConverter : TypeConverter
             return true;
         }
 
-        if (destinationType == typeof(string) && context is not null && context.Instance is ListViewItem)
+        if (destinationType == typeof(string) && context is not null && GetListViewFromContext(context) is not null)
         {
             return true;
         }
@@ -55,28 +55,26 @@ internal class ListViewGroupConverter : TypeConverter
         if (value is string stringValue)
         {
             string text = stringValue.Trim();
-            if (context is not null && context.Instance is not null)
+
+            if (string.IsNullOrEmpty(text) || text.Equals("None", StringComparison.OrdinalIgnoreCase) || text.Equals(SR.toStringNone, StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            ListView? listView = GetListViewFromContext(context!);
+            if (listView is not null)
             {
-                if (context.Instance is ListViewItem item && item.ListView is not null)
+                foreach (ListViewGroup group in listView.Groups)
                 {
-                    foreach (ListViewGroup group in item.ListView.Groups)
-                    {
-                        if (group.Header == text)
-                        {
-                            return group;
-                        }
-                    }
+                    if (string.Equals(group.Header, text, StringComparison.OrdinalIgnoreCase))
+                        return group;
                 }
             }
-        }
 
-        if (value is null || value.Equals(SR.toStringNone))
-        {
             return null;
         }
 
-        return base.ConvertFrom(context, culture, value);
-    }
+    return base.ConvertFrom(context, culture, value);
+}
+
 
     /// <summary>
     ///  Converts the given object to another type. The most common types to convert
@@ -112,10 +110,11 @@ internal class ListViewGroupConverter : TypeConverter
     /// </summary>
     public override StandardValuesCollection? GetStandardValues(ITypeDescriptorContext? context)
     {
-        if (context is not null && context.Instance is ListViewItem item && item.ListView is not null)
+        ListView? listView = GetListViewFromContext(context!);
+        if (listView is not null)
         {
-            List<ListViewGroup?> list = new();
-            foreach (ListViewGroup group in item.ListView.Groups)
+            var list = new List<ListViewGroup?>();
+            foreach (ListViewGroup group in listView.Groups)
             {
                 list.Add(group);
             }
@@ -125,6 +124,33 @@ internal class ListViewGroupConverter : TypeConverter
             return new StandardValuesCollection(list);
         }
 
+        return null;
+    }
+
+    /// <summary>
+    ///  Gets the owning ListView from the provided type descriptor context.
+    ///  If the context.Instance is a single ListViewItem, returns its ListView.
+    ///  If the context.Instance is an array (multi-selection), returns the first
+    ///  ListView found among the items. Returns null if no ListView is available.
+    /// </summary>
+    private static ListView? GetListViewFromContext(ITypeDescriptorContext context)
+    {
+        object? instance = context.Instance;
+        if (instance is ListViewItem item)
+        {
+            return item.ListView;
+        }
+     
+        if (instance is Array arr)
+        {
+            foreach (object? obj in arr)
+            {
+                if (obj is ListViewItem subItem && subItem.ListView is not null)
+                {
+                    return subItem.ListView;
+                }
+            }
+        }
         return null;
     }
 
