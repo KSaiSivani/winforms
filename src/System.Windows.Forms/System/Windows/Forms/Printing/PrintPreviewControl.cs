@@ -690,7 +690,7 @@ public partial class PrintPreviewControl : Control
             {
                 Rectangle box = pageRenderArea[i];
                 g.DrawRectangle(Pens.Black, box);
-                using (var brush = ForeColor.GetCachedSolidBrushScope())
+                using (var brush = GetPageBackColor().GetCachedSolidBrushScope())
                 {
                     g.FillRectangle(brush, box);
                 }
@@ -751,6 +751,8 @@ public partial class PrintPreviewControl : Control
     {
         return (isHighContract && !ShouldSerializeBackColor()) ? SystemColors.ControlDarkDark : BackColor;
     }
+
+    private Color GetPageBackColor() => ShouldSerializeForeColor() ? ForeColor : Color.White;
 
     private static int PixelsToPhysical(int pixels, int dpi) => (int)(pixels * 100.0 / dpi);
 
