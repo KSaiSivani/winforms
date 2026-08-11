@@ -49,6 +49,18 @@ public class ExpressionContextTests
     }
 
     [Fact]
+    public void ExpressionContext_Ctor_NullExpression_PresetValueAllowed()
+    {
+        CodeExpression expression = new();
+        object owner = new();
+        ExpressionContext context = new(expression, typeof(string), owner, null);
+
+        Assert.Same(expression, context.Expression);
+        Assert.Same(owner, context.Owner);
+        Assert.Null(context.PresetValue);
+    }
+
+    [Fact]
     public void RootContext_Ctor_NullExpressionType_ThrowsArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>("expressionType", () => new ExpressionContext(new CodeExpression(), null, new object(), new object()));

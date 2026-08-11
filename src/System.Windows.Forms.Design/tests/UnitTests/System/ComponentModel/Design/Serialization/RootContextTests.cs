@@ -31,4 +31,16 @@ public class RootContextTests
         CodeExpression expression = new();
         Assert.Throws<ArgumentNullException>("value", () => new RootContext(expression, null));
     }
+
+    [Fact]
+    public void RootContext_Ctor_StoresExpressionAndValue()
+    {
+        CodeExpression expression = new CodePrimitiveExpression("value");
+        object value = new object();
+
+        RootContext context = new(expression, value);
+
+        Assert.Same(expression, context.Expression);
+        Assert.Same(value, context.Value);
+    }
 }

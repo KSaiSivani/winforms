@@ -14,6 +14,14 @@ public class SerializeAbsoluteContextTests
         Assert.Null(context.Member);
     }
 
+    [Fact]
+    public void SerializeAbsoluteContext_ShouldSerialize_NullMember_ReturnsTrue()
+    {
+        SerializeAbsoluteContext context = new();
+
+        Assert.True(context.ShouldSerialize(null));
+    }
+
     public static IEnumerable<object[]> Ctor_MemberDescriptor_TestData()
     {
         yield return new object[] { null };
