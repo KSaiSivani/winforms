@@ -30,6 +30,68 @@ public partial class ControlTests
     }
 
     [WinFormsFact]
+    public void Control_WndProc_Print_HdcDpi_IsPropagated()
+    {
+        using SubControl control = new();
+        control.SetStyle(ControlStyles.UserPaint, true);
+        control.SetStyle(ControlStyles.AllPaintingInWmPaint, true);
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+
+        int paintCallCount = 0;
+        float observedDpi = 0;
+        control.Paint += (sender, e) =>
+        {
+            paintCallCount++;
+            observedDpi = e.Graphics.DpiX;
+        };
+
+        using Bitmap image = new(10, 10);
+        using Graphics graphics = Graphics.FromImage(image);
+        IntPtr hdc = graphics.GetHdc();
+        try
+        {
+            Message m = new()
+            {
+                Msg = (int)PInvokeCore.WM_PRINT,
+                WParam = hdc,
+                LParam = (IntPtr)PInvoke.PRF_CLIENT,
+            };
+
+            control.WndProc(ref m);
+
+            // Base Control does not handle WM_PRINT directly; WM_PRINTCLIENT is what triggers
+            // the Paint path. Expect no Paint for WM_PRINT on the base control.
+            Assert.Equal(0, paintCallCount);
+            Assert.Equal(0f, observedDpi);
+        }
+        finally
+        {
+            graphics.ReleaseHdc();
+        }
+    }
+
+    [WinFormsFact]
+    public void Control_WndProc_Print_WithoutWParam_DoesNotThrow()
+    {
+        using (new NoAssertContext())
+        {
+            using SubControl control = new();
+            control.SetStyle(ControlStyles.UserPaint, true);
+            control.SetStyle(ControlStyles.Opaque, false);
+
+            Message m = new()
+            {
+                Msg = (int)PInvokeCore.WM_PRINT,
+                LParam = (IntPtr)PInvoke.PRF_CLIENT,
+            };
+
+            control.WndProc(ref m);
+            // Ensure no handle was created and no exception thrown.
+            Assert.False(control.IsHandleCreated);
+        }
+    }
+
+    [WinFormsFact]
     public void Control_SuspendPainting_ScopeDisposes_Success()
     {
         using SubControl control = new();
@@ -2320,6 +2382,30 @@ public partial class ControlTests
         Assert.Equal(0, invalidatedCallCount);
         Assert.Equal(0, styleChangedCallCount);
         Assert.Equal(0, createdCallCount);
+    }
+
+    [WinFormsTheory]
+    [InlineData(96)]
+    [InlineData(144)]
+    [InlineData(192)]
+    public void Control_DrawToBitmap_DpiIgnored_ByBitmapResolution(int bitmapDpi)
+    {
+        using SubControl control = new()
+        {
+            Width = 20,
+            Height = 20,
+        };
+
+        using Bitmap bitmap = new(20, 20);
+        bitmap.SetResolution(bitmapDpi, bitmapDpi);
+
+        float observedDpi = 0;
+        control.Paint += (sender, e) => observedDpi = e.Graphics.DpiX;
+
+        control.DrawToBitmap(bitmap, new Rectangle(0, 0, 20, 20));
+
+        Assert.True(control.IsHandleCreated);
+        Assert.Equal(96f, observedDpi);
     }
 
     [WinFormsFact]
@@ -6978,6 +7064,104 @@ public partial class ControlTests
         // Reset again.
         control.ResetText();
         Assert.Empty(control.Text);
+    }
+
+    [WinFormsFact]
+    public void Control_ShouldSerializeText_DefaultValueReturnsFalse()
+    {
+        using SubControl control = new();
+
+        Assert.False(control.ShouldSerializeText());
+
+        control.Text = "Text";
+
+        Assert.True(control.ShouldSerializeText());
+
+        control.ResetText();
+
+        Assert.False(control.ShouldSerializeText());
+    }
+
+    [WinFormsFact]
+    public void Control_ShouldSerializeBackColor_DefaultValueReturnsFalse()
+    {
+        using Control control = new();
+
+        Assert.False(control.ShouldSerializeBackColor());
+
+        control.BackColor = Color.Black;
+
+        Assert.True(control.ShouldSerializeBackColor());
+
+        control.ResetBackColor();
+
+        Assert.False(control.ShouldSerializeBackColor());
+    }
+
+    [WinFormsFact]
+    public void Control_ShouldSerializeForeColor_DefaultValueReturnsFalse()
+    {
+        using Control control = new();
+
+        Assert.False(control.ShouldSerializeForeColor());
+
+        control.ForeColor = Color.Black;
+
+        Assert.True(control.ShouldSerializeForeColor());
+
+        control.ResetForeColor();
+
+        Assert.False(control.ShouldSerializeForeColor());
+    }
+
+    [WinFormsFact]
+    public void Control_ShouldSerializeFont_DefaultValueReturnsFalse()
+    {
+        using Control control = new();
+        using Font font = new("Arial", 8.25f);
+
+        Assert.False(control.ShouldSerializeFont());
+
+        control.Font = font;
+
+        Assert.True(control.ShouldSerializeFont());
+
+        control.ResetFont();
+
+        Assert.False(control.ShouldSerializeFont());
+    }
+
+    [WinFormsFact]
+    public void Control_ShouldSerializeRightToLeft_DefaultValueReturnsFalse()
+    {
+        using SubControl control = new();
+
+        Assert.False(control.ShouldSerializeRightToLeft());
+
+        control.RightToLeft = RightToLeft.Yes;
+
+        Assert.True(control.ShouldSerializeRightToLeft());
+
+        control.ResetRightToLeft();
+
+        Assert.False(control.ShouldSerializeRightToLeft());
+    }
+
+    [WinFormsFact]
+    public void Control_ShouldSerializeCursor_DefaultValueReturnsFalse()
+    {
+        using SubControl control = new();
+        using Cursor cursor = new(1);
+
+        Assert.False(control.ShouldSerializeCursor());
+
+        control.Cursor = cursor;
+
+        Assert.True(control.ShouldSerializeCursor());
+
+        control.ResetCursor();
+
+        Assert.False(control.ShouldSerializeCursor());
     }
 
     public static IEnumerable<object[]> ResumeLayout_TestData()
