@@ -15,6 +15,7 @@ namespace System.Windows.Forms.Design.Tests;
 public class DesignerAttributeTests
 {
     private readonly ITestOutputHelper _output;
+    private IReadOnlyList<string>? _forwardedDesignTypes;
 
     private static ImmutableHashSet<string> SkipList { get; } =
     [
@@ -196,4 +197,46 @@ public class DesignerAttributeTests
 
         Assert.NotNull(type);
     }
+
+    [Theory]
+    [MemberData(nameof(GetAttributeOfTypeAndProperty_TestData), Assemblies.SystemWindowsForms, typeof(TypeConverterAttribute))]
+    [MemberData(nameof(GetAttributeOfTypeAndProperty_TestData), Assemblies.SystemDrawing, typeof(TypeConverterAttribute))]
+    [MemberData(nameof(GetAttributeOfTypeAndProperty_TestData), Assemblies.SystemDesign, typeof(TypeConverterAttribute))]
+    public void TypeConverterAttribute_RefersToResolvableType(string subject, TypeConverterAttribute attribute)
+    {
+        if (SkipList.Contains(attribute.ConverterTypeName))
+        {
+            return;
+        }
+
+        AssertAttributeTargetExists(subject, attribute.ConverterTypeName, nameof(TypeConverterAttribute));
+    }
+
+    [Theory]
+    [MemberData(nameof(GetAttributeOfTypeAndProperty_TestData), Assemblies.SystemWindowsForms, typeof(EditorAttribute))]
+    [MemberData(nameof(GetAttributeOfTypeAndProperty_TestData), Assemblies.SystemDrawing, typeof(EditorAttribute))]
+    [MemberData(nameof(GetAttributeOfTypeAndProperty_TestData), Assemblies.SystemDesign, typeof(EditorAttribute))]
+    public void EditorAttribute_RefersToResolvableType(string subject, EditorAttribute attribute)
+    {
+        if (SkipList.Contains(attribute.EditorTypeName))
+        {
+            return;
+        }
+
+        AssertAttributeTargetExists(subject, attribute.EditorTypeName, nameof(EditorAttribute));
+    }
+
+    private void AssertAttributeTargetExists(string subject, string typeName, string attributeName)
+    {
+        var type = Type.GetType(typeName, throwOnError: false);
+        Assert.NotNull(type);
+
+        _output.WriteLine($"{subject}: {attributeName} target {typeName} --> {type.FullName}");
+        if (!type.IsPublic && !type.IsNestedPublic && type.Assembly.GetName().Name == Assemblies.SystemDesign)
+        {
+            Assert.Contains(type.FullName, GetSystemDesignExportedTypes());
+        }
+    }
+
+    private IReadOnlyList<string> GetSystemDesignExportedTypes() => _forwardedDesignTypes ??= new SystemDesignMetadataReader().GetExportedTypeNames();
 }
