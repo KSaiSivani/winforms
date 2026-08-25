@@ -354,6 +354,54 @@ public class ToolStripPanelTests
         Assert.Null(exception);
     }
 
+    [WinFormsFact]
+    public void ToolStripPanel_ToolStripPositionRestored_AfterShrinkAndRegrow()
+    {
+        using Form form = new()
+        {
+            ClientSize = new Size(600, 200)
+        };
+        using ToolStripContainer toolStripContainer = new()
+        {
+            Dock = DockStyle.Fill
+        };
+        using ToolStrip toolStrip1 = new();
+        using ToolStrip toolStrip2 = new();
+        toolStrip1.Items.Add(new ToolStripButton("Btn1"));
+        toolStrip2.Items.Add(new ToolStripButton("Btn2"));
+
+        form.Controls.Add(toolStripContainer);
+        form.Show();
+
+        ToolStripPanel topPanel = toolStripContainer.TopToolStripPanel;
+        topPanel.Join(toolStrip1, new Point(0, 0));
+        topPanel.Join(toolStrip2, new Point(300, 0));
+
+        topPanel.PerformLayout();
+        Application.DoEvents();
+
+        int originalToolStrip2Left = toolStrip2.Left;
+
+        // Sanity check: the raft position actually took effect before shrinking.
+        Assert.True(originalToolStrip2Left > toolStrip1.Right);
+
+        // Shrink the form drastically, similar to what happens when it is minimized, forcing the
+        // row to free up space and compact the ToolStrips.
+        form.ClientSize = new Size(100, 200);
+        Application.DoEvents();
+
+        // The ToolStrips should now be compacted to fit the available space.
+        Assert.True(toolStrip2.Left < originalToolStrip2Left);
+
+        // Restore the form back to its original size.
+        form.ClientSize = new Size(600, 200);
+        Application.DoEvents();
+
+        // The ToolStrip should have returned to its original rafted position, instead of
+        // remaining bunched up in the upper-left corner of the panel.
+        Assert.Equal(originalToolStrip2Left, toolStrip2.Left);
+    }
+
     private class SubToolStripPanel : ToolStripPanel
     {
         public new SizeF AutoScaleFactor => base.AutoScaleFactor;

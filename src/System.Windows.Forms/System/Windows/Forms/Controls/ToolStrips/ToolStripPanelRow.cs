@@ -426,22 +426,28 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
         // since layout is suspended, we'll need to watch changes to the margin
         // as a result of calling FreeSpaceFromRow.
-        int[] margins = new int[Cells.Count];
+        Padding[] margins = new Padding[Cells.Count];
         for (int i = 0; i < Cells.Count; i++)
         {
             ToolStripPanelCell c = (ToolStripPanelCell)Cells[i];
-            margins[i] = c.Margin.Left;
+            margins[i] = c.Margin;
         }
 
         spaceToFree -= RowManager.FreeSpaceFromRow(spaceToFree);
 
-        // now apply those changes to the cached bounds.
+        // now apply those changes to the cached bounds, then restore the original margins.
+        // FreeSpaceFromRow only needs to affect the bounds used for this layout pass - the
+        // margins represent the ToolStrips' preferred (rafted) position and must be preserved
+        // so that the row can return to its original layout once more space becomes available
+        // again, e.g. after the owning Form is minimized and then restored.
+        // See https://github.com/dotnet/winforms/issues/4359.
         for (int i = 0; i < Cells.Count; i++)
         {
             ToolStripPanelCell c = (ToolStripPanelCell)Cells[i];
             Rectangle cachedBounds = c.CachedBounds;
-            cachedBounds.X -= Math.Max(0, margins[i] - c.Margin.Left);
+            cachedBounds.X -= Math.Max(0, margins[i].Left - c.Margin.Left);
             c.CachedBounds = cachedBounds;
+            c.Margin = margins[i];
         }
 
         if (spaceToFree <= 0)
@@ -523,22 +529,28 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
         // since layout is suspended, we'll need to watch changes to the margin
         // as a result of calling FreeSpaceFromRow.
-        int[] margins = new int[Cells.Count];
+        Padding[] margins = new Padding[Cells.Count];
         for (int i = 0; i < Cells.Count; i++)
         {
             ToolStripPanelCell c = (ToolStripPanelCell)Cells[i];
-            margins[i] = c.Margin.Top;
+            margins[i] = c.Margin;
         }
 
         spaceToFree -= RowManager.FreeSpaceFromRow(spaceToFree);
 
-        // now apply those changes to the cached bounds.
+        // now apply those changes to the cached bounds, then restore the original margins.
+        // FreeSpaceFromRow only needs to affect the bounds used for this layout pass - the
+        // margins represent the ToolStrips' preferred (rafted) position and must be preserved
+        // so that the row can return to its original layout once more space becomes available
+        // again, e.g. after the owning Form is minimized and then restored.
+        // See https://github.com/dotnet/winforms/issues/4359.
         for (int i = 0; i < Cells.Count; i++)
         {
             ToolStripPanelCell c = (ToolStripPanelCell)Cells[i];
             Rectangle cachedBounds = c.CachedBounds;
-            cachedBounds.X = Math.Max(0, cachedBounds.X - margins[i] - c.Margin.Top);
+            cachedBounds.Y = Math.Max(0, cachedBounds.Y - Math.Max(0, margins[i].Top - c.Margin.Top));
             c.CachedBounds = cachedBounds;
+            c.Margin = margins[i];
         }
 
         if (spaceToFree <= 0)
