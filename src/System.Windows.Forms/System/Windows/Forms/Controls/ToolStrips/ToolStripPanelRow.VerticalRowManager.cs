@@ -543,8 +543,11 @@ public partial class ToolStripPanelRow
                             ToolStripPanelCell? cell = GetNextVisibleCell(Row.Cells.Count - 1, forward: false);
                             if (cell is not null)
                             {
+                                // Row.Bounds.Y already accounts for the ToolStripPanel's own Padding, so it
+                                // must be subtracted out here as well, otherwise the control ends up
+                                // positioned one Padding.Top too far down (see winforms#4449).
                                 Padding cellMargin = cell.Margin;
-                                cellMargin.Top = Math.Max(0, locationToDrag.Y - Row.Margin.Top);
+                                cellMargin.Top = Math.Max(0, locationToDrag.Y - Row.Margin.Top - ToolStripPanel.Padding.Top);
                                 cell.Margin = cellMargin;
                             }
                         }

@@ -539,8 +539,11 @@ public partial class ToolStripPanelRow
 
                             if (cell is not null)
                             {
+                                // Row.Bounds.X already accounts for the ToolStripPanel's own Padding, so it
+                                // must be subtracted out here as well, otherwise the control ends up
+                                // positioned one Padding.Left too far to the right (see winforms#4449).
                                 Padding cellMargin = cell.Margin;
-                                cellMargin.Left = Math.Max(0, locationToDrag.X - Row.Margin.Left);
+                                cellMargin.Left = Math.Max(0, locationToDrag.X - Row.Margin.Left - ToolStripPanel.Padding.Left);
                                 cell.Margin = cellMargin;
                             }
                         }
