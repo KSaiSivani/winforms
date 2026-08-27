@@ -430,6 +430,107 @@ public partial class RadioButton : ButtonBase
         }
     }
 
+    /// <summary>
+    ///  Gets a value indicating whether we need to correct the color of the label text that the native
+    ///  <c>BS_RADIOBUTTON</c> control draws.
+    /// </summary>
+    /// <remarks>
+    ///  <para>
+    ///   Unlike <see cref="CheckBox"/> (<c>BS_AUTOCHECKBOX</c>), a themed native radio button
+    ///   (<c>BS_RADIOBUTTON</c>) ignores the text color supplied via <c>WM_CTLCOLORBTN</c> and
+    ///   always paints its label using the theme's own (light) text color. In Dark Mode with
+    ///   <see cref="FlatStyle.System"/> this makes the label unreadable against the dark background. We work
+    ///   around this comctl32 limitation by intercepting the reflected <c>NM_CUSTOMDRAW</c> notification and
+    ///   redrawing just the label text (not the radio glyph) with the correct color.
+    ///  </para>
+    /// </remarks>
+    private bool ShouldCorrectDarkModeLabelColor =>
+        FlatStyle == FlatStyle.System
+            && Application.IsDarkModeEnabled
+            && !ShouldSerializeForeColor();
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.MsgInternal == MessageId.WM_REFLECT_NOTIFY
+            && ShouldCorrectDarkModeLabelColor
+            && WmReflectNotifyForDarkModeLabelColor(ref m))
+        {
+            return;
+        }
+
+        base.WndProc(ref m);
+    }
+
+    /// <summary>
+    ///  Handles the reflected <c>NM_CUSTOMDRAW</c> notification to redraw the RadioButton's label text with the
+    ///  correct Dark Mode color. Returns <see langword="true"/> if the message was fully handled and no further
+    ///  processing (including the base <see cref="WndProc(ref Message)"/>) is required.
+    /// </summary>
+    private unsafe bool WmReflectNotifyForDarkModeLabelColor(ref Message m)
+    {
+        NMHDR* nmhdr = (NMHDR*)(nint)m.LParamInternal;
+        if (nmhdr->code != PInvoke.NM_CUSTOMDRAW)
+        {
+            return false;
+        }
+
+        NMCUSTOMDRAW* nmcd = (NMCUSTOMDRAW*)(nint)m.LParamInternal;
+
+        switch (nmcd->dwDrawStage)
+        {
+            case NMCUSTOMDRAW_DRAW_STAGE.CDDS_PREPAINT:
+                // Let the theme engine draw the radio glyph and label as usual, but ask to be notified again
+                // once it's done, so we get a chance to redraw the label text ourselves.
+                m.ResultInternal = (LRESULT)(nint)PInvoke.CDRF_NOTIFYPOSTPAINT;
+                return true;
+
+            case NMCUSTOMDRAW_DRAW_STAGE.CDDS_POSTPAINT:
+                RedrawLabelTextForDarkMode(nmcd);
+                m.ResultInternal = (LRESULT)(nint)PInvoke.CDRF_DODEFAULT;
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    ///  Redraws only the label text (not the radio glyph, which the theme has already drawn correctly) using
+    ///  <see cref="Control.ForeColor"/>, so it stays legible in Dark Mode.
+    /// </summary>
+    private unsafe void RedrawLabelTextForDarkMode(NMCUSTOMDRAW* nmcd)
+    {
+        if (string.IsNullOrEmpty(Text))
+        {
+            return;
+        }
+
+        VisualStyles.RadioButtonState state = Checked
+            ? (Enabled ? VisualStyles.RadioButtonState.CheckedNormal : VisualStyles.RadioButtonState.CheckedDisabled)
+            : (Enabled ? VisualStyles.RadioButtonState.UncheckedNormal : VisualStyles.RadioButtonState.UncheckedDisabled);
+
+        Size glyphSize = RadioButtonRenderer.GetGlyphSize(nmcd->hdc, state, HWND);
+
+        Rectangle bounds = nmcd->rc;
+        bool rightAligned = (RtlTranslateContent(CheckAlign) & AnyRight) != 0;
+        Rectangle textBounds = rightAligned
+            ? new Rectangle(bounds.X, bounds.Y, bounds.Width - glyphSize.Width, bounds.Height)
+            : new Rectangle(bounds.X + glyphSize.Width, bounds.Y, bounds.Width - glyphSize.Width, bounds.Height);
+
+        if (textBounds.Width <= 0 || textBounds.Height <= 0)
+        {
+            return;
+        }
+
+        TextFormatFlags flags = TextFormatFlags.SingleLine
+            | TextFormatFlags.VerticalCenter
+            | TextFormatFlags.EndEllipsis
+            | (rightAligned ? TextFormatFlags.Right : TextFormatFlags.Left);
+
+        using Graphics g = nmcd->hdc.CreateGraphics();
+        TextRenderer.DrawText(g, Text, Font, textBounds, ForeColor, flags);
+    }
+
     /// <inheritdoc/>
     protected override void OnSystemColorsChanged(EventArgs e)
     {

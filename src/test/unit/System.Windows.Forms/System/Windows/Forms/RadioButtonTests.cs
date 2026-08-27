@@ -1932,6 +1932,278 @@ public class RadioButtonTests : AbstractButtonBaseTests
         Assert.Equal("System.Windows.Forms.RadioButton, Checked: False", control.ToString());
     }
 
+    [WinFormsTheory]
+    [InlineData(FlatStyle.System, false, false, false)]
+    [InlineData(FlatStyle.System, true, false, true)]
+    [InlineData(FlatStyle.Standard, true, false, false)]
+    [InlineData(FlatStyle.Flat, true, false, false)]
+    [InlineData(FlatStyle.Popup, true, false, false)]
+    [InlineData(FlatStyle.System, true, true, false)]
+    public void RadioButton_ShouldCorrectDarkModeLabelColor_ReturnsExpected(
+        FlatStyle flatStyle,
+        bool darkMode,
+        bool explicitForeColor,
+        bool expected)
+    {
+        // Regression test for https://github.com/dotnet/winforms/issues/11950
+        // Native BS_RADIOBUTTON ignores WM_CTLCOLORBTN-supplied text colors, so the RadioButton
+        // corrects its label color via NM_CUSTOMDRAW only for the default-ForeColor,
+        // FlatStyle.System, Dark Mode combination.
+        var applicationAccessor = typeof(Application).TestAccessor.Dynamic;
+        SystemColorMode? previousColorMode = applicationAccessor.s_colorMode;
+
+        try
+        {
+            applicationAccessor.s_colorMode = darkMode ? SystemColorMode.Dark : SystemColorMode.Classic;
+
+            using RadioButton control = new()
+            {
+                FlatStyle = flatStyle
+            };
+
+            if (explicitForeColor)
+            {
+                control.ForeColor = Color.Yellow;
+            }
+
+            Assert.Equal(expected, control.TestAccessor.Dynamic.ShouldCorrectDarkModeLabelColor);
+        }
+        finally
+        {
+            applicationAccessor.s_colorMode = previousColorMode;
+        }
+    }
+
+    [WinFormsFact]
+    public unsafe void RadioButton_WndProc_ReflectNotifyCustomDrawPrePaint_RequestsPostPaintWhenDarkModeAndSystemStyle()
+    {
+        // Regression test for https://github.com/dotnet/winforms/issues/11950
+        var applicationAccessor = typeof(Application).TestAccessor.Dynamic;
+        SystemColorMode? previousColorMode = applicationAccessor.s_colorMode;
+
+        try
+        {
+            applicationAccessor.s_colorMode = SystemColorMode.Dark;
+
+            using SubRadioButton control = new()
+            {
+                FlatStyle = FlatStyle.System,
+                Text = "Some Text"
+            };
+
+            NMCUSTOMDRAW customDraw = new()
+            {
+                hdr = new NMHDR { code = (uint)PInvoke.NM_CUSTOMDRAW },
+                dwDrawStage = NMCUSTOMDRAW_DRAW_STAGE.CDDS_PREPAINT
+            };
+
+            Message m = new()
+            {
+                Msg = (int)MessageId.WM_REFLECT_NOTIFY,
+                HWnd = control.Handle,
+                LParam = (IntPtr)(&customDraw),
+                Result = 250
+            };
+
+            control.WndProc(ref m);
+
+            Assert.Equal((nint)PInvoke.CDRF_NOTIFYPOSTPAINT, m.Result);
+            Assert.True(control.IsHandleCreated);
+        }
+        finally
+        {
+            applicationAccessor.s_colorMode = previousColorMode;
+        }
+    }
+
+    [WinFormsFact]
+    public unsafe void RadioButton_WndProc_ReflectNotifyCustomDrawPostPaint_DrawsLabelAndReturnsDoDefault()
+    {
+        // Regression test for https://github.com/dotnet/winforms/issues/11950
+        var applicationAccessor = typeof(Application).TestAccessor.Dynamic;
+        SystemColorMode? previousColorMode = applicationAccessor.s_colorMode;
+
+        try
+        {
+            applicationAccessor.s_colorMode = SystemColorMode.Dark;
+
+            using SubRadioButton control = new()
+            {
+                FlatStyle = FlatStyle.System,
+                Text = "Some Text",
+                Bounds = new Rectangle(0, 0, 200, 24)
+            };
+            control.CreateControl();
+            Assert.True(control.IsHandleCreated);
+
+            using Bitmap bitmap = new(200, 24);
+            using Graphics graphics = Graphics.FromImage(bitmap);
+            IntPtr hdc = graphics.GetHdc();
+
+            try
+            {
+                NMCUSTOMDRAW customDraw = new()
+                {
+                    hdr = new NMHDR { code = (uint)PInvoke.NM_CUSTOMDRAW },
+                    dwDrawStage = NMCUSTOMDRAW_DRAW_STAGE.CDDS_POSTPAINT,
+                    hdc = (HDC)hdc,
+                    rc = new RECT(0, 0, 200, 24)
+                };
+
+                Message m = new()
+                {
+                    Msg = (int)MessageId.WM_REFLECT_NOTIFY,
+                    HWnd = control.Handle,
+                    LParam = (IntPtr)(&customDraw),
+                    Result = 250
+                };
+
+                // Should not throw and should draw the label without affecting the returned result.
+                control.WndProc(ref m);
+
+                Assert.Equal((nint)PInvoke.CDRF_DODEFAULT, m.Result);
+            }
+            finally
+            {
+                graphics.ReleaseHdc(hdc);
+            }
+        }
+        finally
+        {
+            applicationAccessor.s_colorMode = previousColorMode;
+        }
+    }
+
+    [WinFormsTheory]
+    [InlineData(FlatStyle.Standard)]
+    [InlineData(FlatStyle.Flat)]
+    [InlineData(FlatStyle.Popup)]
+    public unsafe void RadioButton_WndProc_ReflectNotifyCustomDraw_NotHandledForNonSystemFlatStyle(FlatStyle flatStyle)
+    {
+        // Regression test for https://github.com/dotnet/winforms/issues/11950
+        var applicationAccessor = typeof(Application).TestAccessor.Dynamic;
+        SystemColorMode? previousColorMode = applicationAccessor.s_colorMode;
+
+        try
+        {
+            applicationAccessor.s_colorMode = SystemColorMode.Dark;
+
+            using SubRadioButton control = new()
+            {
+                FlatStyle = flatStyle,
+                Text = "Some Text"
+            };
+
+            NMCUSTOMDRAW customDraw = new()
+            {
+                hdr = new NMHDR { code = (uint)PInvoke.NM_CUSTOMDRAW },
+                dwDrawStage = NMCUSTOMDRAW_DRAW_STAGE.CDDS_PREPAINT
+            };
+
+            Message m = new()
+            {
+                Msg = (int)MessageId.WM_REFLECT_NOTIFY,
+                HWnd = control.Handle,
+                LParam = (IntPtr)(&customDraw),
+                Result = 250
+            };
+
+            control.WndProc(ref m);
+
+            // The message should fall through to the default handling, which does not report
+            // CDRF_NOTIFYPOSTPAINT since we're not intercepting the notification in this scenario.
+            Assert.NotEqual((nint)PInvoke.CDRF_NOTIFYPOSTPAINT, m.Result);
+        }
+        finally
+        {
+            applicationAccessor.s_colorMode = previousColorMode;
+        }
+    }
+
+    [WinFormsFact]
+    public unsafe void RadioButton_WndProc_ReflectNotifyCustomDraw_NotHandledWithExplicitForeColor()
+    {
+        // Regression test for https://github.com/dotnet/winforms/issues/11950
+        // When the user has explicitly set ForeColor, we don't override the (still broken,
+        // but out-of-scope) native rendering behavior.
+        var applicationAccessor = typeof(Application).TestAccessor.Dynamic;
+        SystemColorMode? previousColorMode = applicationAccessor.s_colorMode;
+
+        try
+        {
+            applicationAccessor.s_colorMode = SystemColorMode.Dark;
+
+            using SubRadioButton control = new()
+            {
+                FlatStyle = FlatStyle.System,
+                Text = "Some Text",
+                ForeColor = Color.Yellow
+            };
+
+            NMCUSTOMDRAW customDraw = new()
+            {
+                hdr = new NMHDR { code = (uint)PInvoke.NM_CUSTOMDRAW },
+                dwDrawStage = NMCUSTOMDRAW_DRAW_STAGE.CDDS_PREPAINT
+            };
+
+            Message m = new()
+            {
+                Msg = (int)MessageId.WM_REFLECT_NOTIFY,
+                HWnd = control.Handle,
+                LParam = (IntPtr)(&customDraw),
+                Result = 250
+            };
+
+            control.WndProc(ref m);
+
+            Assert.NotEqual((nint)PInvoke.CDRF_NOTIFYPOSTPAINT, m.Result);
+        }
+        finally
+        {
+            applicationAccessor.s_colorMode = previousColorMode;
+        }
+    }
+
+    [WinFormsFact]
+    public unsafe void RadioButton_WndProc_ReflectNotify_IgnoresNonCustomDrawNotifications()
+    {
+        // Regression test for https://github.com/dotnet/winforms/issues/11950
+        var applicationAccessor = typeof(Application).TestAccessor.Dynamic;
+        SystemColorMode? previousColorMode = applicationAccessor.s_colorMode;
+
+        try
+        {
+            applicationAccessor.s_colorMode = SystemColorMode.Dark;
+
+            using SubRadioButton control = new()
+            {
+                FlatStyle = FlatStyle.System,
+                Text = "Some Text"
+            };
+
+            NMHDR nmhdr = new()
+            {
+                code = uint.MaxValue
+            };
+
+            Message m = new()
+            {
+                Msg = (int)MessageId.WM_REFLECT_NOTIFY,
+                HWnd = control.Handle,
+                LParam = (IntPtr)(&nmhdr),
+                Result = 250
+            };
+
+            control.WndProc(ref m);
+
+            Assert.NotEqual((nint)PInvoke.CDRF_NOTIFYPOSTPAINT, m.Result);
+        }
+        finally
+        {
+            applicationAccessor.s_colorMode = previousColorMode;
+        }
+    }
+
     private class SubRadioButton : RadioButton
     {
         public new bool CanEnableIme => base.CanEnableIme;
@@ -2027,6 +2299,8 @@ public class RadioButtonTests : AbstractButtonBaseTests
         public new void RescaleConstantsForDpi(int deviceDpiOld, int deviceDpiNew) => base.RescaleConstantsForDpi(deviceDpiOld, deviceDpiNew);
 
         public new void SetStyle(ControlStyles flag, bool value) => base.SetStyle(flag, value);
+
+        public new void WndProc(ref Message m) => base.WndProc(ref m);
     }
 
     private class TestRadioButton : RadioButton
