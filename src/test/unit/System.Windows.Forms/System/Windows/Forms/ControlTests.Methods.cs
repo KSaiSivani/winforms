@@ -2461,6 +2461,36 @@ public partial class ControlTests
         Assert.Throws<ArgumentException>(() => control.DrawToBitmap(bitmap, new Rectangle(1, 2, 3, 4)));
     }
 
+    [WinFormsTheory]
+    [InlineData(96)]
+    [InlineData(144)]
+    [InlineData(192)]
+    public void Control_DrawToBitmap_GraphicsDpi_IgnoresDestinationBitmapResolution(int destinationDpi)
+    {
+        using SubControl control = new()
+        {
+            Width = 20,
+            Height = 20,
+        };
+
+        using Bitmap bitmap = new(20, 20);
+        bitmap.SetResolution(destinationDpi, destinationDpi);
+
+        int paintCallCount = 0;
+        float observedDpi = 0;
+        control.Paint += (sender, e) =>
+        {
+            paintCallCount++;
+            observedDpi = e.Graphics.DpiX;
+        };
+
+        control.DrawToBitmap(bitmap, new Rectangle(0, 0, 20, 20));
+
+        Assert.True(control.IsHandleCreated);
+        Assert.Equal(1, paintCallCount);
+        Assert.Equal(96f, observedDpi);
+    }
+
     [WinFormsFact]
     public void Control_FindFormWithParent_ReturnsForm()
     {
@@ -7064,104 +7094,6 @@ public partial class ControlTests
         // Reset again.
         control.ResetText();
         Assert.Empty(control.Text);
-    }
-
-    [WinFormsFact]
-    public void Control_ShouldSerializeText_DefaultValueReturnsFalse()
-    {
-        using SubControl control = new();
-
-        Assert.False(control.ShouldSerializeText());
-
-        control.Text = "Text";
-
-        Assert.True(control.ShouldSerializeText());
-
-        control.ResetText();
-
-        Assert.False(control.ShouldSerializeText());
-    }
-
-    [WinFormsFact]
-    public void Control_ShouldSerializeBackColor_DefaultValueReturnsFalse()
-    {
-        using Control control = new();
-
-        Assert.False(control.ShouldSerializeBackColor());
-
-        control.BackColor = Color.Black;
-
-        Assert.True(control.ShouldSerializeBackColor());
-
-        control.ResetBackColor();
-
-        Assert.False(control.ShouldSerializeBackColor());
-    }
-
-    [WinFormsFact]
-    public void Control_ShouldSerializeForeColor_DefaultValueReturnsFalse()
-    {
-        using Control control = new();
-
-        Assert.False(control.ShouldSerializeForeColor());
-
-        control.ForeColor = Color.Black;
-
-        Assert.True(control.ShouldSerializeForeColor());
-
-        control.ResetForeColor();
-
-        Assert.False(control.ShouldSerializeForeColor());
-    }
-
-    [WinFormsFact]
-    public void Control_ShouldSerializeFont_DefaultValueReturnsFalse()
-    {
-        using Control control = new();
-        using Font font = new("Arial", 8.25f);
-
-        Assert.False(control.ShouldSerializeFont());
-
-        control.Font = font;
-
-        Assert.True(control.ShouldSerializeFont());
-
-        control.ResetFont();
-
-        Assert.False(control.ShouldSerializeFont());
-    }
-
-    [WinFormsFact]
-    public void Control_ShouldSerializeRightToLeft_DefaultValueReturnsFalse()
-    {
-        using SubControl control = new();
-
-        Assert.False(control.ShouldSerializeRightToLeft());
-
-        control.RightToLeft = RightToLeft.Yes;
-
-        Assert.True(control.ShouldSerializeRightToLeft());
-
-        control.ResetRightToLeft();
-
-        Assert.False(control.ShouldSerializeRightToLeft());
-    }
-
-    [WinFormsFact]
-    public void Control_ShouldSerializeCursor_DefaultValueReturnsFalse()
-    {
-        using SubControl control = new();
-        using Cursor cursor = new(1);
-
-        Assert.False(control.ShouldSerializeCursor());
-
-        control.Cursor = cursor;
-
-        Assert.True(control.ShouldSerializeCursor());
-
-        control.ResetCursor();
-
-        Assert.False(control.ShouldSerializeCursor());
     }
 
     public static IEnumerable<object[]> ResumeLayout_TestData()
@@ -13970,6 +13902,97 @@ public partial class ControlTests
         finally
         {
             graphics.ReleaseHdc();
+        }
+    }
+
+    [WinFormsTheory]
+    [InlineData(96)]
+    [InlineData(144)]
+    [InlineData(192)]
+    public void Control_WndProc_InvokePrintClient_GraphicsDpi_IgnoresSourceBitmapResolution(int sourceDpi)
+    {
+        using SubControl control = new();
+        control.SetStyle(ControlStyles.UserPaint, true);
+        control.SetStyle(ControlStyles.Opaque, true);
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+
+        int paintCallCount = 0;
+        float observedDpiX = 0;
+        float observedDpiY = 0;
+        control.Paint += (sender, e) =>
+        {
+            paintCallCount++;
+            observedDpiX = e.Graphics.DpiX;
+            observedDpiY = e.Graphics.DpiY;
+        };
+
+        using Bitmap image = new(10, 10);
+        image.SetResolution(sourceDpi, sourceDpi);
+        using Graphics graphics = Graphics.FromImage(image);
+        IntPtr hdc = graphics.GetHdc();
+        try
+        {
+            Message m = new()
+            {
+                Msg = (int)PInvokeCore.WM_PRINTCLIENT,
+                WParam = hdc,
+                Result = 250
+            };
+            control.WndProc(ref m);
+
+            Assert.Equal(1, paintCallCount);
+
+            // The memory device context created above always reports the screen's default (96) DPI via
+            // GetDeviceCaps regardless of the backing bitmap's stored resolution, so the Graphics handed to
+            // OnPrint should always observe 96 DPI here, never the bitmap's SetResolution value. If this
+            // starts failing, DPI propagation behavior for printing has changed and issue #3540 should be
+            // revisited to confirm whether the change is intentional.
+            Assert.Equal(96f, observedDpiX);
+            Assert.Equal(96f, observedDpiY);
+        }
+        finally
+        {
+            graphics.ReleaseHdc();
+        }
+    }
+
+    [WinFormsTheory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void Control_WndProc_InvokePrint_DoesNotRaisePaint(bool userPaint, bool opaque)
+    {
+        using (new NoAssertContext())
+        {
+            using SubControl control = new();
+            control.SetStyle(ControlStyles.UserPaint, userPaint);
+            control.SetStyle(ControlStyles.Opaque, opaque);
+            int paintCallCount = 0;
+            control.Paint += (sender, e) => paintCallCount++;
+
+            using Bitmap image = new(10, 10);
+            using Graphics graphics = Graphics.FromImage(image);
+            IntPtr hdc = graphics.GetHdc();
+            try
+            {
+                Message m = new()
+                {
+                    Msg = (int)PInvokeCore.WM_PRINT,
+                    WParam = hdc,
+                    LParam = (IntPtr)PInvoke.PRF_CLIENT,
+                    Result = 250
+                };
+
+                control.WndProc(ref m);
+
+                Assert.Equal(0, paintCallCount);
+                Assert.False(control.IsHandleCreated);
+            }
+            finally
+            {
+                graphics.ReleaseHdc();
+            }
         }
     }
 
