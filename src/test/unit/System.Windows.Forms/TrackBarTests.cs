@@ -2197,6 +2197,172 @@ public class TrackBarTests
     }
 
     [WinFormsFact]
+    public void TrackBar_ShowSelectionRange_Set_GetReturnsExpected()
+    {
+        using SubTrackBar control = new();
+        Assert.False(control.ShowSelectionRange);
+
+        control.ShowSelectionRange = true;
+        Assert.True(control.ShowSelectionRange);
+        Assert.False(control.IsHandleCreated);
+
+        // Set same.
+        control.ShowSelectionRange = true;
+        Assert.True(control.ShowSelectionRange);
+        Assert.False(control.IsHandleCreated);
+
+        control.ShowSelectionRange = false;
+        Assert.False(control.ShowSelectionRange);
+    }
+
+    [WinFormsFact]
+    public void TrackBar_ShowSelectionRange_SetWithHandle_RecreatesHandle()
+    {
+        using SubTrackBar control = new();
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+        int createdCallCount = 0;
+        control.HandleCreated += (sender, e) => createdCallCount++;
+
+        control.ShowSelectionRange = true;
+        Assert.True(control.ShowSelectionRange);
+        Assert.True(control.IsHandleCreated);
+        Assert.Equal(1, createdCallCount);
+
+        // Set same, no recreate.
+        control.ShowSelectionRange = true;
+        Assert.True(control.ShowSelectionRange);
+        Assert.Equal(1, createdCallCount);
+    }
+
+    [WinFormsTheory]
+    [InlineData(0)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void TrackBar_SelectionStart_Set_GetReturnsExpected(int value)
+    {
+        using SubTrackBar control = new()
+        {
+            SelectionStart = value
+        };
+        Assert.Equal(value, control.SelectionStart);
+        Assert.False(control.IsHandleCreated);
+
+        // Set same.
+        control.SelectionStart = value;
+        Assert.Equal(value, control.SelectionStart);
+        Assert.False(control.IsHandleCreated);
+    }
+
+    [WinFormsTheory]
+    [InlineData(-1)]
+    [InlineData(11)]
+    public void TrackBar_SelectionStart_SetOutOfRange_ThrowsArgumentOutOfRangeException(int value)
+    {
+        using TrackBar control = new();
+        Assert.Throws<ArgumentOutOfRangeException>("value", () => control.SelectionStart = value);
+        Assert.Equal(0, control.SelectionStart);
+    }
+
+    [WinFormsFact]
+    public void TrackBar_SelectionStart_SetWithHandle_SendsSelStartMessage()
+    {
+        using SubTrackBar control = new()
+        {
+            ShowSelectionRange = true
+        };
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+
+        control.SelectionStart = 3;
+        Assert.Equal(3, control.SelectionStart);
+        Assert.Equal(3, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+    }
+
+    [WinFormsFact]
+    public void TrackBar_SelectionStart_SetGreaterThanMaximumMinusLength_ReducesSelectionLength()
+    {
+        using TrackBar control = new()
+        {
+            Maximum = 10,
+            SelectionLength = 4,
+            SelectionStart = 8
+        };
+        Assert.Equal(8, control.SelectionStart);
+        Assert.Equal(2, control.SelectionLength);
+    }
+
+    [WinFormsTheory]
+    [InlineData(0)]
+    [InlineData(5)]
+    [InlineData(10)]
+    public void TrackBar_SelectionLength_Set_GetReturnsExpected(int value)
+    {
+        using SubTrackBar control = new()
+        {
+            SelectionLength = value
+        };
+        Assert.Equal(value, control.SelectionLength);
+        Assert.False(control.IsHandleCreated);
+
+        // Set same.
+        control.SelectionLength = value;
+        Assert.Equal(value, control.SelectionLength);
+        Assert.False(control.IsHandleCreated);
+    }
+
+    [WinFormsFact]
+    public void TrackBar_SelectionLength_SetNegative_ThrowsArgumentOutOfRangeException()
+    {
+        using SubTrackBar control = new();
+        Assert.Throws<ArgumentOutOfRangeException>("value", () => control.SelectionLength = -1);
+        Assert.Equal(0, control.SelectionLength);
+    }
+
+    [WinFormsFact]
+    public void TrackBar_SelectionLength_SetWithHandle_SendsSelEndMessage()
+    {
+        using SubTrackBar control = new()
+        {
+            ShowSelectionRange = true,
+            SelectionStart = 2
+        };
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+
+        control.SelectionLength = 5;
+        Assert.Equal(5, control.SelectionLength);
+        Assert.Equal(7, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+    }
+
+    [WinFormsFact]
+    public void TrackBar_Selection_SetRangeConstrainsSelection()
+    {
+        using TrackBar control = new()
+        {
+            SelectionStart = 5,
+            SelectionLength = 5
+        };
+
+        // Shrinking the range should constrain the previously-set selection.
+        control.SetRange(0, 6);
+        Assert.Equal(5, control.SelectionStart);
+        Assert.Equal(1, control.SelectionLength);
+    }
+
+    [WinFormsFact]
+    public void TrackBar_Selection_BeginEndInit_ConstrainsSelectionAfterEndInit()
+    {
+        using TrackBar control = new();
+        control.BeginInit();
+        control.Minimum = 0;
+        control.Maximum = 10;
+        control.SelectionStart = 20;
+        control.SelectionLength = 5;
+        control.EndInit();
+
+        Assert.Equal(10, control.SelectionStart);
+        Assert.Equal(0, control.SelectionLength);
+    }
+
+    [WinFormsFact]
     public void TrackBar_BeginInit_InvokeMultipleTimes_Success()
     {
         using TrackBar control = new();

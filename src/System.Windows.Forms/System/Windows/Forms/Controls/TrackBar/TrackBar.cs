@@ -37,6 +37,9 @@ public partial class TrackBar : Control, ISupportInitialize
     private TickStyle _tickStyle = TickStyle.BottomRight;
     private int _requestedDim;
     private bool _autoDrawTicks;
+    private bool _showSelectionRange;
+    private int _selectionStart;
+    private int _selectionLength;
     // Mouse wheel movement
     private int _cumulativeWheelData;
 
@@ -173,6 +176,11 @@ public partial class TrackBar : Control, ISupportInitialize
             if (_orientation == Orientation.Vertical)
             {
                 cp.Style |= (int)PInvoke.TBS_VERT;
+            }
+
+            if (_showSelectionRange)
+            {
+                cp.Style |= (int)PInvoke.TBS_ENABLESELRANGE;
             }
 
             if (RightToLeft == RightToLeft.Yes && RightToLeftLayout)
@@ -468,6 +476,96 @@ public partial class TrackBar : Control, ISupportInitialize
     }
 
     /// <summary>
+    ///  The length, in TrackBar units, of the highlighted selection range that begins at
+    ///  <see cref="SelectionStart"/>. This is only visible when <see cref="ShowSelectionRange"/> is
+    ///  <see langword="true"/>.
+    /// </summary>
+    [SRCategory(nameof(SR.CatBehavior))]
+    [DefaultValue(0)]
+    [SRDescription(nameof(SR.TrackBarSelectionLengthDescr))]
+    public int SelectionLength
+    {
+        get => _selectionLength;
+        set
+        {
+            if (value < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value, string.Format(SR.TrackBarSelectionLengthError, value));
+            }
+
+            if (_selectionLength == value)
+            {
+                return;
+            }
+
+            _selectionLength = value;
+            ConstrainSelection();
+            if (IsHandleCreated && _showSelectionRange)
+            {
+                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
+            }
+        }
+    }
+
+    /// <summary>
+    ///  The lower limit, within the <see cref="Minimum"/> and <see cref="Maximum"/> range, of the highlighted
+    ///  selection range. This is only visible when <see cref="ShowSelectionRange"/> is <see langword="true"/>.
+    /// </summary>
+    [SRCategory(nameof(SR.CatBehavior))]
+    [DefaultValue(0)]
+    [SRDescription(nameof(SR.TrackBarSelectionStartDescr))]
+    public int SelectionStart
+    {
+        get => _selectionStart;
+        set
+        {
+            if (!_initializing && ((value < _minimum) || (value > _maximum)))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value, string.Format(SR.InvalidBoundArgument, nameof(SelectionStart), value, $"'{nameof(Minimum)}'", $"'{nameof(Maximum)}'"));
+            }
+
+            if (_selectionStart == value)
+            {
+                return;
+            }
+
+            _selectionStart = value;
+            ConstrainSelection();
+            if (IsHandleCreated && _showSelectionRange)
+            {
+                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)true, (LPARAM)_selectionStart);
+                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
+            }
+        }
+    }
+
+    /// <summary>
+    ///  Indicates whether the TrackBar highlights the range of values between <see cref="SelectionStart"/>
+    ///  and <see cref="SelectionStart"/> + <see cref="SelectionLength"/>. The highlight is drawn natively by
+    ///  the underlying common control; setting this property requires the native control to be recreated.
+    /// </summary>
+    [SRCategory(nameof(SR.CatAppearance))]
+    [DefaultValue(false)]
+    [SRDescription(nameof(SR.TrackBarShowSelectionRangeDescr))]
+    public bool ShowSelectionRange
+    {
+        get => _showSelectionRange;
+        set
+        {
+            if (_showSelectionRange == value)
+            {
+                return;
+            }
+
+            _showSelectionRange = value;
+            if (IsHandleCreated)
+            {
+                RecreateHandle();
+            }
+        }
+    }
+
+    /// <summary>
     ///  The number of ticks by which the TrackBar will change when an
     ///  event considered a "small change" occurs. These are most commonly
     ///  seen by using the arrow keys to move the TrackBar thumb around.
@@ -747,6 +845,38 @@ public partial class TrackBar : Control, ISupportInitialize
         }
     }
 
+    /// <summary>
+    ///  Constrain the current selection range to be within the minimum and maximum.
+    /// </summary>
+    private void ConstrainSelection()
+    {
+        // Don't constrain the selection while we're initializing the control
+        if (_initializing)
+        {
+            return;
+        }
+
+        if (_selectionStart < _minimum)
+        {
+            _selectionStart = _minimum;
+        }
+
+        if (_selectionStart > _maximum)
+        {
+            _selectionStart = _maximum;
+        }
+
+        if (_selectionLength < 0)
+        {
+            _selectionLength = 0;
+        }
+
+        if (_selectionStart + _selectionLength > _maximum)
+        {
+            _selectionLength = _maximum - _selectionStart;
+        }
+    }
+
     protected override AccessibleObject CreateAccessibilityInstance() => new TrackBarAccessibleObject(this);
 
     protected override unsafe void CreateHandle()
@@ -809,6 +939,7 @@ public partial class TrackBar : Control, ISupportInitialize
 
         // Make sure the value is constrained by the minimum and maximum
         ConstrainValue();
+        ConstrainSelection();
     }
 
     private void GetTrackBarValue()
@@ -872,6 +1003,12 @@ public partial class TrackBar : Control, ISupportInitialize
 
         PInvokeCore.SendMessage(this, PInvoke.TBM_SETPAGESIZE, (WPARAM)0, (LPARAM)_largeChange);
         PInvokeCore.SendMessage(this, PInvoke.TBM_SETLINESIZE, (WPARAM)0, (LPARAM)_smallChange);
+        if (_showSelectionRange)
+        {
+            PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)false, (LPARAM)_selectionStart);
+            PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)false, (LPARAM)(_selectionStart + _selectionLength));
+        }
+
         SetTrackBarPosition();
         AdjustSize();
     }
@@ -1050,6 +1187,10 @@ public partial class TrackBar : Control, ISupportInitialize
 
             _minimum = minValue;
             _maximum = maxValue;
+
+            // Keep the selection range within the new minimum and maximum.
+            ConstrainSelection();
+
             // Determine if the decision of whether the ticks drawing,
             // is performed by the native control or the Windows Forms runtime
             // is still valid. If it's no longer valid, we'll need to recreate the native control.
@@ -1063,6 +1204,12 @@ public partial class TrackBar : Control, ISupportInitialize
                 if (!_autoDrawTicks)
                 {
                     DrawTicksManually();
+                }
+
+                if (_showSelectionRange)
+                {
+                    PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)false, (LPARAM)_selectionStart);
+                    PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
                 }
 
                 Invalidate();
