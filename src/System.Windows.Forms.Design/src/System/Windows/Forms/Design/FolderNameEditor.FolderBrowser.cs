@@ -17,6 +17,18 @@ public partial class FolderNameEditor
         ///  folders. This should be a combination of flags from
         ///  the FolderBrowserStyles enum.
         /// </summary>
+        /// <remarks>
+        ///  <para>
+        ///   The dialog shown by <see cref="ShowDialog(IWin32Window?)"/> is delegated to the modern,
+        ///   Vista-style <see cref="FolderBrowserDialog"/>, which always restricts browsing to the file system.
+        ///   As a result, only <see cref="FolderBrowserStyles.RestrictToFilesystem"/> (the default) is honored;
+        ///   the remaining flags (e.g. <see cref="FolderBrowserStyles.BrowseForComputer"/>,
+        ///   <see cref="FolderBrowserStyles.BrowseForPrinter"/>, <see cref="FolderBrowserStyles.BrowseForEverything"/>,
+        ///   <see cref="FolderBrowserStyles.RestrictToDomain"/>, <see cref="FolderBrowserStyles.RestrictToSubfolders"/>,
+        ///   and <see cref="FolderBrowserStyles.ShowTextBox"/>) have no effect, as the modern folder picker has no
+        ///   equivalent concepts.
+        ///  </para>
+        /// </remarks>
         public FolderBrowserStyles Style { get; set; } = FolderBrowserStyles.RestrictToFilesystem;
 
         /// <summary>
@@ -27,6 +39,15 @@ public partial class FolderNameEditor
         /// <summary>
         ///  Gets/sets the start location of the root node.
         /// </summary>
+        /// <remarks>
+        ///  <para>
+        ///   This value is passed through to <see cref="FolderBrowserDialog.RootFolder"/>, which is only consulted
+        ///   by the legacy Shell folder browser dialog. The modern Vista-style picker used by
+        ///   <see cref="ShowDialog(IWin32Window?)"/> does not currently read <see cref="FolderBrowserDialog.RootFolder"/>,
+        ///   so setting this property has no observable effect unless the legacy dialog fallback is used
+        ///   (for example, when <see cref="FolderBrowserDialog.AutoUpgradeEnabled"/> cannot be honored).
+        ///  </para>
+        /// </remarks>
         public FolderBrowserFolder StartLocation { get; set; } = FolderBrowserFolder.Desktop;
 
         /// <summary>
@@ -54,6 +75,9 @@ public partial class FolderNameEditor
             {
                 Description = _descriptionText,
                 SelectedPath = DirectoryPath,
+                // Some FolderBrowserFolder values (NetAndDialUpConnections, NetworkNeighborhood, Printers) don't
+                // correspond to a defined Environment.SpecialFolder member. That's fine: FolderBrowserDialog.RootFolder
+                // intentionally accepts undefined values without validation for compatibility with this enum.
                 RootFolder = (Environment.SpecialFolder)StartLocation,
                 AutoUpgradeEnabled = true
             };

@@ -4,6 +4,7 @@
 #nullable disable
 
 using System.ComponentModel;
+using System.Reflection;
 using Windows.Win32.UI.Controls.Dialogs;
 
 namespace System.Windows.Forms.Tests;
@@ -366,6 +367,18 @@ public class FileDialogTests
         dialog.InitialDirectory = value;
         Assert.Equal(value ?? string.Empty, dialog.InitialDirectory);
         Assert.Equal(2052, dialog.Options);
+    }
+
+    [Fact]
+    public void FileDialog_InitialDirectory_EditorAttribute_IsInitialDirectoryEditor()
+    {
+        // Regression test: InitialDirectory must keep using InitialDirectoryEditor (which derives from
+        // FolderNameEditor and shows the modernized folder picker via FolderNameEditor.FolderBrowser) so that
+        // it retains its specialized dialog description text instead of the generic FolderNameEditor prompt.
+        PropertyInfo property = typeof(FileDialog).GetProperty(nameof(FileDialog.InitialDirectory));
+        EditorAttribute editorAttribute = property.GetCustomAttribute<EditorAttribute>();
+        Assert.NotNull(editorAttribute);
+        Assert.StartsWith("System.Windows.Forms.Design.InitialDirectoryEditor,", editorAttribute.EditorTypeName);
     }
 
     [WinFormsTheory]
