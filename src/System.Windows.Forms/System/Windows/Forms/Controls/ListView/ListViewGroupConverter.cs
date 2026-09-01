@@ -112,10 +112,10 @@ internal class ListViewGroupConverter : TypeConverter
     /// </summary>
     public override StandardValuesCollection? GetStandardValues(ITypeDescriptorContext? context)
     {
-        if (context is not null && context.Instance is ListViewItem item && item.ListView is not null)
+        if (GetListView(context) is ListView listView)
         {
             List<ListViewGroup?> list = new();
-            foreach (ListViewGroup group in item.ListView.Groups)
+            foreach (ListViewGroup group in listView.Groups)
             {
                 list.Add(group);
             }
@@ -126,6 +126,37 @@ internal class ListViewGroupConverter : TypeConverter
         }
 
         return null;
+    }
+
+    private static ListView? GetListView(ITypeDescriptorContext? context)
+    {
+        if (context?.Instance is ListViewItem item)
+        {
+            return item.ListView;
+        }
+
+        if (context?.Instance is not object[] items || items.Length == 0)
+        {
+            return null;
+        }
+
+        ListView? listView = null;
+        foreach (object instance in items)
+        {
+            if (instance is not ListViewItem selectedItem || selectedItem.ListView is null)
+            {
+                return null;
+            }
+
+            if (listView is not null && !ReferenceEquals(listView, selectedItem.ListView))
+            {
+                return null;
+            }
+
+            listView = selectedItem.ListView;
+        }
+
+        return listView;
     }
 
     /// <summary>
