@@ -26,57 +26,7 @@ public static unsafe partial class ControlPaint
     {
         ArgumentNullException.ThrowIfNull(graphics);
 
-        // Define colors for different states
-        Color backgroundColor;
-        Color borderColor;
-        Color arrowColor;
-
-        if (isDarkMode)
-        {
-            // Dark mode colors
-            backgroundColor = state switch
-            {
-                ModernControlButtonState.Pressed => s_darkModeBackgroundPressed,
-                ModernControlButtonState.Disabled => s_darkModeBackgroundDisabled,
-                ModernControlButtonState.Hover => s_darkModeBackgroundHover,
-                _ => s_darkModeBackgroundNormal
-            };
-
-            borderColor = state switch
-            {
-                ModernControlButtonState.Pressed => s_darkModeBorderPressed,
-                ModernControlButtonState.Disabled => s_darkModeBorderDisabled,
-                ModernControlButtonState.Hover => s_darkModeBorderHover,
-                _ => s_darkModeBorderNormal
-            };
-
-            arrowColor = state == ModernControlButtonState.Disabled
-                ? s_darkModeArrowDisabled
-                : s_darkModeArrowNormal;
-        }
-        else
-        {
-            // Light mode colors
-            backgroundColor = state switch
-            {
-                ModernControlButtonState.Pressed => s_lightModeBackgroundPressed,
-                ModernControlButtonState.Disabled => s_lightModeBackgroundDisabled,
-                ModernControlButtonState.Hover => s_lightModeBackgroundHover,
-                _ => s_lightModeBackgroundNormal
-            };
-
-            borderColor = state switch
-            {
-                ModernControlButtonState.Pressed => s_lightModeBorderPressed,
-                ModernControlButtonState.Disabled => s_lightModeBorderDisabled,
-                ModernControlButtonState.Hover => s_lightModeBorderHover,
-                _ => s_lightModeBorderNormal
-            };
-
-            arrowColor = state == ModernControlButtonState.Disabled
-                ? s_lightModeArrowDisabled
-                : s_lightModeArrowNormal;
-        }
+        (Color backgroundColor, Color borderColor, Color arrowColor) = GetModernControlButtonColors(state, isDarkMode);
 
         // Enable anti-aliasing for smooth rendering
         SmoothingMode oldMode = graphics.SmoothingMode;
@@ -143,6 +93,47 @@ public static unsafe partial class ControlPaint
             graphics.SmoothingMode = oldMode;
         }
     }
+
+    /// <summary>
+    ///  Gets the colors a modern control button renders with for the given state.
+    /// </summary>
+    private static (Color Background, Color Border, Color Arrow) GetModernControlButtonColors(
+        ModernControlButtonState state,
+        bool isDarkMode) => isDarkMode
+        ? (state switch
+        {
+            ModernControlButtonState.Pressed => s_darkModeBackgroundPressed,
+            ModernControlButtonState.Disabled => s_darkModeBackgroundDisabled,
+            ModernControlButtonState.Hover => s_darkModeBackgroundHover,
+            _ => s_darkModeBackgroundNormal
+        },
+        state switch
+        {
+            ModernControlButtonState.Pressed => s_darkModeBorderPressed,
+            ModernControlButtonState.Disabled => s_darkModeBorderDisabled,
+            ModernControlButtonState.Hover => s_darkModeBorderHover,
+            _ => s_darkModeBorderNormal
+        },
+        state == ModernControlButtonState.Disabled
+            ? s_darkModeArrowDisabled
+            : s_darkModeArrowNormal)
+        : (state switch
+        {
+            ModernControlButtonState.Pressed => s_lightModeBackgroundPressed,
+            ModernControlButtonState.Disabled => s_lightModeBackgroundDisabled,
+            ModernControlButtonState.Hover => s_lightModeBackgroundHover,
+            _ => s_lightModeBackgroundNormal
+        },
+        state switch
+        {
+            ModernControlButtonState.Pressed => s_lightModeBorderPressed,
+            ModernControlButtonState.Disabled => s_lightModeBorderDisabled,
+            ModernControlButtonState.Hover => s_lightModeBorderHover,
+            _ => s_lightModeBorderNormal
+        },
+        state == ModernControlButtonState.Disabled
+            ? s_lightModeArrowDisabled
+            : s_lightModeArrowNormal);
 
     /// <summary>
     ///  Draws the button content based on the button type.
