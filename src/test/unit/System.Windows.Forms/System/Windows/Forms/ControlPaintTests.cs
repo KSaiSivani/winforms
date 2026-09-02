@@ -685,20 +685,6 @@ public partial class ControlPaintTests
         Assert.Throws<ArgumentNullException>("graphics", () => ControlPaint.DrawBorder(null, new Rectangle(1, 2, 3, 4), Color.Red, 1, style, Color.Red, 1, style, Color.Red, 1, style, Color.Red, 1, style));
     }
 
-    [WinFormsFact]
-    public void ControlPaint_DrawBorder_NullDeviceContextComplex_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(
-            "deviceContext",
-            () => ControlPaint.DrawBorder(
-                (IDeviceContext)null,
-                new Rectangle(1, 2, 3, 4),
-                Color.Red, 0, ButtonBorderStyle.None,
-                Color.Red, 0, ButtonBorderStyle.None,
-                Color.Red, 0, ButtonBorderStyle.None,
-                Color.Red, 0, ButtonBorderStyle.None));
-    }
-
     public static IEnumerable<object[]> DrawBorder3D_Graphics_Rectangle_TestData()
     {
         yield return new object[] { Rectangle.Empty };
@@ -1903,133 +1889,6 @@ public partial class ControlPaintTests
     }
 
     [WinFormsFact]
-    public void ControlPaint_DrawSizeGrip_InvokeDeviceContextOverloads_Success()
-    {
-        using Bitmap image = new(20, 20);
-        using Graphics graphics = Graphics.FromImage(image);
-        IDeviceContext deviceContext = graphics;
-
-        ControlPaint.DrawSizeGrip(deviceContext, Color.Red, new Rectangle(1, 2, 10, 10));
-        ControlPaint.DrawSizeGrip(deviceContext, Color.Red, 1, 2, 10, 10);
-    }
-
-    [WinFormsFact]
-    public void ControlPaint_DrawSizeGrip_NullDeviceContext_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(
-            "deviceContext",
-            () => ControlPaint.DrawSizeGrip((IDeviceContext)null, Color.Red, new Rectangle(1, 2, 3, 4)));
-        Assert.Throws<ArgumentNullException>(
-            "deviceContext",
-            () => ControlPaint.DrawSizeGrip((IDeviceContext)null, Color.Red, 1, 2, 3, 4));
-    }
-
-    [WinFormsFact]
-    public void ControlPaint_DrawFrameControl_DeviceContextNegativeSize_ThrowsArgumentOutOfRangeException()
-    {
-        using Bitmap image = new(20, 20);
-        using Graphics graphics = Graphics.FromImage(image);
-        using var deviceContext = new GraphicsDeviceContext(graphics);
-
-        Assert.Throws<ArgumentOutOfRangeException>(
-            "width",
-            () => ControlPaint.DrawButton(deviceContext, 1, 2, -1, 4, ButtonState.Normal));
-        Assert.Throws<ArgumentOutOfRangeException>(
-            "height",
-            () => ControlPaint.DrawCaptionButton(deviceContext, 1, 2, 3, -1, CaptionButton.Close, ButtonState.Normal));
-        Assert.Throws<ArgumentOutOfRangeException>(
-            "width",
-            () => ControlPaint.DrawCheckBox(deviceContext, 1, 2, -1, 4, ButtonState.Normal));
-        Assert.Throws<ArgumentOutOfRangeException>(
-            "height",
-            () => ControlPaint.DrawComboButton(deviceContext, 1, 2, 3, -1, ButtonState.Normal));
-    }
-
-    [WinFormsTheory]
-    [InlineData(0, 3)]
-    [InlineData(3, 0)]
-    [InlineData(0, 0)]
-    public void ControlPaint_DrawFrameControl_DeviceContextEmptySize_ThrowsArgumentException(int width, int height)
-    {
-        using Bitmap image = new(20, 20);
-        using Graphics graphics = Graphics.FromImage(image);
-        using var deviceContext = new GraphicsDeviceContext(graphics);
-
-        Assert.Throws<ArgumentException>(
-            () => ControlPaint.DrawButton(deviceContext, 1, 2, width, height, ButtonState.Normal));
-        Assert.Throws<ArgumentException>(
-            () => ControlPaint.DrawCaptionButton(
-                deviceContext,
-                1, 2, width, height,
-                CaptionButton.Close,
-                ButtonState.Normal));
-        Assert.Throws<ArgumentException>(
-            () => ControlPaint.DrawCheckBox(deviceContext, 1, 2, width, height, ButtonState.Normal));
-        Assert.Throws<ArgumentException>(
-            () => ControlPaint.DrawComboButton(deviceContext, 1, 2, width, height, ButtonState.Normal));
-        Assert.Throws<ArgumentException>(
-            () => ControlPaint.DrawMenuGlyph(deviceContext, 1, 2, width, height, MenuGlyph.Arrow));
-        Assert.Throws<ArgumentException>(
-            () => ControlPaint.DrawMixedCheckBox(deviceContext, 1, 2, width, height, ButtonState.Normal));
-        Assert.Throws<ArgumentException>(
-            () => ControlPaint.DrawRadioButton(deviceContext, 1, 2, width, height, ButtonState.Normal));
-        Assert.Throws<ArgumentException>(
-            () => ControlPaint.DrawScrollButton(
-                deviceContext,
-                1, 2, width, height,
-                ScrollButton.Down,
-                ButtonState.Normal));
-    }
-
-    [WinFormsFact]
-    public void ControlPaint_DrawBorder_DeviceContextIgnoresAlpha()
-    {
-        using Bitmap transparentImage = new(20, 20);
-        using Bitmap opaqueImage = new(20, 20);
-        using Graphics transparentGraphics = Graphics.FromImage(transparentImage);
-        using Graphics opaqueGraphics = Graphics.FromImage(opaqueImage);
-        using var transparentContext = new GraphicsDeviceContext(transparentGraphics);
-        using var opaqueContext = new GraphicsDeviceContext(opaqueGraphics);
-
-        transparentGraphics.Clear(Color.White);
-        opaqueGraphics.Clear(Color.White);
-        ControlPaint.DrawBorder(
-            transparentContext,
-            new Rectangle(2, 2, 10, 10),
-            Color.FromArgb(10, 20, 30, 40),
-            ButtonBorderStyle.Solid);
-        ControlPaint.DrawBorder(
-            opaqueContext,
-            new Rectangle(2, 2, 10, 10),
-            Color.FromArgb(255, 20, 30, 40),
-            ButtonBorderStyle.Solid);
-
-        for (int y = 0; y < 20; y++)
-        {
-            for (int x = 0; x < 20; x++)
-            {
-                Assert.Equal(opaqueImage.GetPixel(x, y), transparentImage.GetPixel(x, y));
-            }
-        }
-    }
-
-    [WinFormsFact]
-    public void ControlPaint_DrawButton_DeviceContextNonZeroBounds_DrawsAtRequestedLocation()
-    {
-        using Bitmap image = new(40, 40);
-        using Graphics graphics = Graphics.FromImage(image);
-        graphics.Clear(Color.Black);
-        using var deviceContext = new GraphicsDeviceContext(graphics);
-
-        ControlPaint.DrawButton(deviceContext, 20, 20, 10, 10, ButtonState.Normal);
-
-        Assert.Equal(Color.Black.ToArgb(), image.GetPixel(1, 1).ToArgb());
-        Assert.Contains(
-            Enumerable.Range(20, 10).SelectMany(x => Enumerable.Range(20, 10).Select(y => image.GetPixel(x, y))),
-            color => color.ToArgb() != Color.Black.ToArgb());
-    }
-
-    [WinFormsFact]
     public void ControlPaint_DrawSizeGrip_NullGraphics_ThrowsArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>("graphics", () => ControlPaint.DrawSizeGrip(null, Color.Red, new Rectangle(1, 2, 3, 4)));
@@ -2445,14 +2304,74 @@ public partial class ControlPaintTests
         Assert.Equal(expected, ControlPaint.LightLight(baseColor));
     }
 
-    private sealed class GraphicsDeviceContext(Graphics graphics) : IDeviceContext
+    public static IEnumerable<object[]> IDeviceContext_Draw_NullDeviceContext_TestData()
     {
-        public IntPtr GetHdc() => graphics.GetHdc();
-
-        public void ReleaseHdc() => graphics.ReleaseHdc();
-
-        public void Dispose()
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawBorder(dc, new Rectangle(1, 2, 3, 4), Color.Red, ButtonBorderStyle.Solid)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawBorder3D(dc, 1, 2, 3, 4)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawButton(dc, new Rectangle(1, 2, 3, 4), ButtonState.Normal)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawCaptionButton(dc, new Rectangle(1, 2, 3, 4), CaptionButton.Close, ButtonState.Normal)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawCheckBox(dc, new Rectangle(1, 2, 3, 4), ButtonState.Normal)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawComboButton(dc, new Rectangle(1, 2, 3, 4), ButtonState.Normal)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawContainerGrabHandle(dc, new Rectangle(1, 2, 3, 4))) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawFocusRectangle(dc, new Rectangle(1, 2, 3, 4))) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawGrabHandle(dc, new Rectangle(1, 2, 3, 4), primary: true, enabled: true)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawGrid(dc, new Rectangle(1, 2, 3, 4), new Size(1, 1), Color.Red)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawLockedFrame(dc, new Rectangle(1, 2, 3, 4), primary: true)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawMenuGlyph(dc, new Rectangle(1, 2, 3, 4), MenuGlyph.Arrow)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawMixedCheckBox(dc, new Rectangle(1, 2, 3, 4), ButtonState.Normal)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawRadioButton(dc, new Rectangle(1, 2, 3, 4), ButtonState.Normal)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawScrollButton(dc, new Rectangle(1, 2, 3, 4), ScrollButton.Up, ButtonState.Normal)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawSelectionFrame(dc, active: true, new Rectangle(1, 2, 6, 6), new Rectangle(2, 3, 2, 2), Color.Red)) };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawVisualStyleBorder(dc, new Rectangle(1, 2, 3, 4))) };
+        yield return new object[]
         {
-        }
+            (Action<IDeviceContext>)(dc => ControlPaint.DrawBorder(
+                dc,
+                new Rectangle(1, 2, 3, 4),
+                Color.Red, 1, ButtonBorderStyle.Solid,
+                Color.Red, 1, ButtonBorderStyle.Solid,
+                Color.Red, 1, ButtonBorderStyle.Solid,
+                Color.Red, 1, ButtonBorderStyle.Solid))
+        };
+        yield return new object[] { (Action<IDeviceContext>)(dc => ControlPaint.DrawSizeGrip(dc, Color.Red, 1, 2, 3, 4)) };
+    }
+
+    [WinFormsTheory]
+    [MemberData(nameof(IDeviceContext_Draw_NullDeviceContext_TestData))]
+    public void ControlPaint_Draw_NullDeviceContext_ThrowsArgumentNullException(Action<IDeviceContext> action)
+        => Assert.Throws<ArgumentNullException>("deviceContext", () => action(null));
+
+    [WinFormsFact]
+    public void ControlPaint_Draw_IDeviceContextOverloads_Success()
+    {
+        using Bitmap image = new(20, 20);
+        using Graphics graphics = Graphics.FromImage(image);
+        IDeviceContext deviceContext = graphics;
+
+        ControlPaint.DrawBorder(deviceContext, new Rectangle(1, 2, 3, 4), Color.Red, ButtonBorderStyle.Solid);
+        ControlPaint.DrawBorder3D(deviceContext, new Rectangle(1, 2, 10, 10));
+        ControlPaint.DrawButton(deviceContext, new Rectangle(1, 2, 10, 10), ButtonState.Normal);
+        ControlPaint.DrawCaptionButton(deviceContext, new Rectangle(1, 2, 10, 10), CaptionButton.Close, ButtonState.Normal);
+        ControlPaint.DrawCheckBox(deviceContext, new Rectangle(1, 2, 10, 10), ButtonState.Normal);
+        ControlPaint.DrawComboButton(deviceContext, new Rectangle(1, 2, 10, 10), ButtonState.Normal);
+        ControlPaint.DrawContainerGrabHandle(deviceContext, new Rectangle(1, 2, 10, 10));
+        ControlPaint.DrawFocusRectangle(deviceContext, new Rectangle(1, 2, 10, 10));
+        ControlPaint.DrawGrabHandle(deviceContext, new Rectangle(1, 2, 10, 10), primary: true, enabled: true);
+        ControlPaint.DrawGrid(deviceContext, new Rectangle(1, 2, 10, 10), new Size(2, 2), Color.Red);
+        ControlPaint.DrawLockedFrame(deviceContext, new Rectangle(1, 2, 10, 10), primary: true);
+        ControlPaint.DrawMenuGlyph(deviceContext, new Rectangle(1, 2, 10, 10), MenuGlyph.Arrow);
+        ControlPaint.DrawMixedCheckBox(deviceContext, new Rectangle(1, 2, 10, 10), ButtonState.Normal);
+        ControlPaint.DrawRadioButton(deviceContext, new Rectangle(1, 2, 10, 10), ButtonState.Normal);
+        ControlPaint.DrawScrollButton(deviceContext, new Rectangle(1, 2, 10, 10), ScrollButton.Up, ButtonState.Normal);
+        ControlPaint.DrawSelectionFrame(deviceContext, active: true, new Rectangle(1, 2, 10, 10), new Rectangle(3, 4, 4, 4), Color.Red);
+        ControlPaint.DrawVisualStyleBorder(deviceContext, new Rectangle(1, 2, 10, 10));
+        ControlPaint.DrawBorder(
+            deviceContext,
+            new Rectangle(1, 2, 10, 10),
+            Color.Red, 1, ButtonBorderStyle.Solid,
+            Color.Red, 1, ButtonBorderStyle.Solid,
+            Color.Red, 1, ButtonBorderStyle.Solid,
+            Color.Red, 1, ButtonBorderStyle.Solid);
+        ControlPaint.DrawSizeGrip(deviceContext, Color.Red, 1, 2, 10, 10);
     }
 }

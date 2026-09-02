@@ -509,7 +509,6 @@ PBM_*
 PBS_*
 PBST_*
 PD_RESULT_*
-Polygon
 PostQuitMessage
 PostQuitMessage
 PostThreadMessage

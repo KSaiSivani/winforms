@@ -160,6 +160,476 @@ public static unsafe partial class ControlPaint
         return result;
     }
 
+    // IDeviceContext overloads. These allow callers with an IDeviceContext (such as PaintEventArgs) to render
+    // without the overhead of creating a Graphics object. Where possible we draw directly with GDI; for styles
+    // that need alpha blending or dashed/dotted GDI+ pens we fall back to a Graphics object.
+
+    /// <summary>
+    ///  Draws a border of the specified style and color on the given device context.
+    /// </summary>
+    public static void DrawBorder(IDeviceContext deviceContext, Rectangle bounds, Color color, ButtonBorderStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+
+        switch (style)
+        {
+            case ButtonBorderStyle.None:
+                break;
+            case ButtonBorderStyle.Dotted:
+            case ButtonBorderStyle.Dashed:
+            case ButtonBorderStyle.Solid:
+                DrawBorderSimple(deviceContext, bounds, color, style);
+                break;
+            case ButtonBorderStyle.Inset:
+            case ButtonBorderStyle.Outset:
+                {
+                    Graphics? g = deviceContext.TryGetGraphics(create: true);
+                    if (g is not null)
+                    {
+                        DrawBorderComplex(g, bounds, color, style);
+                    }
+                    else
+                    {
+                        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+                        using Graphics gg = hdc.HDC.CreateGraphics();
+                        DrawBorderComplex(gg, bounds, color, style);
+                    }
+
+                    break;
+                }
+
+            default:
+                break;
+        }
+    }
+
+    /// <summary>
+    ///  Draws a 3D style border at the given rectangle using the default <see cref="Border3DStyle.Etched"/> style.
+    /// </summary>
+    public static void DrawBorder3D(IDeviceContext deviceContext, int x, int y, int width, int height)
+        => DrawBorder3D(
+            deviceContext,
+            x, y, width, height,
+            Border3DStyle.Etched,
+            Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom);
+
+    /// <summary>
+    ///  Draws a 3D style border at the given rectangle.
+    /// </summary>
+    public static void DrawBorder3D(IDeviceContext deviceContext, int x, int y, int width, int height, Border3DStyle style)
+        => DrawBorder3D(
+            deviceContext,
+            x, y, width, height,
+            style,
+            Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom);
+
+    /// <summary>
+    ///  Draws a 3D style border at the given rectangle, specifying which sides to draw.
+    /// </summary>
+    public static void DrawBorder3D(
+        IDeviceContext deviceContext,
+        int x, int y, int width, int height,
+        Border3DStyle style,
+        Border3DSide sides)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+
+        DRAWEDGE_FLAGS edge = (DRAWEDGE_FLAGS)((uint)style & 0x0F);
+        DRAW_EDGE_FLAGS flags = (DRAW_EDGE_FLAGS)sides | (DRAW_EDGE_FLAGS)((uint)style & ~0x0F);
+
+        RECT rc = new Rectangle(x, y, width, height);
+
+        if (flags.HasFlag((DRAW_EDGE_FLAGS)Border3DStyle.Adjust))
+        {
+            Size sz = SystemInformation.Border3DSize;
+            rc.left -= sz.Width;
+            rc.right += sz.Width;
+            rc.top -= sz.Height;
+            rc.bottom += sz.Height;
+            flags &= ~(DRAW_EDGE_FLAGS)Border3DStyle.Adjust;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawEdge(hdc, ref rc, edge, flags);
+    }
+
+    /// <summary>
+    ///  Draws a 3D style border at the given rectangle using the default <see cref="Border3DStyle.Etched"/> style.
+    /// </summary>
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle)
+        => DrawBorder3D(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height);
+
+    /// <summary>
+    ///  Draws a 3D style border at the given rectangle.
+    /// </summary>
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle, Border3DStyle style)
+        => DrawBorder3D(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, style);
+
+    /// <summary>
+    ///  Draws a 3D style border at the given rectangle, specifying which sides to draw.
+    /// </summary>
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle, Border3DStyle style, Border3DSide sides)
+        => DrawBorder3D(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, style, sides);
+
+    /// <summary>
+    ///  Draws a Win32 button control in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawButton(g, x, y, width, height, state);
+            return;
+        }
+
+        RECT rc = new Rectangle(0, 0, width, height);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawFrameControl(hdc, ref rc, (uint)DFC_TYPE.DFC_BUTTON, (uint)(DFCS_STATE.DFCS_BUTTONPUSH | (DFCS_STATE)state));
+    }
+
+    /// <summary>
+    ///  Draws a Win32 button control in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    /// <summary>
+    ///  Draws a Win32 window caption button in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawCaptionButton(IDeviceContext deviceContext, int x, int y, int width, int height, CaptionButton button, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawCaptionButton(g, x, y, width, height, button, state);
+            return;
+        }
+
+        RECT rc = new Rectangle(0, 0, width, height);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawFrameControl(hdc, ref rc, (uint)DFC_TYPE.DFC_CAPTION, (uint)((DFCS_STATE)button | (DFCS_STATE)state));
+    }
+
+    /// <summary>
+    ///  Draws a Win32 window caption button in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawCaptionButton(IDeviceContext deviceContext, Rectangle rectangle, CaptionButton button, ButtonState state)
+        => DrawCaptionButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, button, state);
+
+    /// <summary>
+    ///  Draws a Win32 checkbox control in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawCheckBox(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawCheckBox(g, x, y, width, height, state);
+            return;
+        }
+
+        if ((state & ButtonState.Flat) == ButtonState.Flat)
+        {
+            using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+            using Graphics gg = hdc.HDC.CreateGraphics();
+            DrawFlatCheckBox(gg, new Rectangle(x, y, width, height), state);
+        }
+        else
+        {
+            RECT rc = new Rectangle(0, 0, width, height);
+            using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+            PInvoke.DrawFrameControl(hdc, ref rc, (uint)DFC_TYPE.DFC_BUTTON, (uint)(DFCS_STATE.DFCS_BUTTONCHECK | (DFCS_STATE)state));
+        }
+    }
+
+    /// <summary>
+    ///  Draws a Win32 checkbox control in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawCheckBox(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawCheckBox(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    /// <summary>
+    ///  Draws the drop down button of a Win32 combo box in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawComboButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawComboButton(g, x, y, width, height, state);
+            return;
+        }
+
+        RECT rc = new Rectangle(0, 0, width, height);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawFrameControl(hdc, ref rc, (uint)DFC_TYPE.DFC_SCROLL, (uint)(DFCS_STATE.DFCS_SCROLLCOMBOBOX | (DFCS_STATE)state));
+    }
+
+    /// <summary>
+    ///  Draws the drop down button of a Win32 combo box in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawComboButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawComboButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    /// <summary>
+    ///  Draws a container control grab handle glyph inside the given rectangle.
+    /// </summary>
+    public static void DrawContainerGrabHandle(IDeviceContext deviceContext, Rectangle bounds)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawContainerGrabHandle(g, bounds);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawContainerGrabHandle(gg, bounds);
+    }
+
+    /// <summary>
+    ///  Draws a focus rectangle indicating the control that has the current keyboard focus.
+    /// </summary>
+    public static void DrawFocusRectangle(IDeviceContext deviceContext, Rectangle rectangle)
+        => DrawFocusRectangle(deviceContext, rectangle, SystemColors.ControlText, SystemColors.Control);
+
+    /// <summary>
+    ///  Draws a focus rectangle indicating the control that has the current keyboard focus.
+    /// </summary>
+    public static void DrawFocusRectangle(IDeviceContext deviceContext, Rectangle rectangle, Color foreColor, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawFocusRectangle(g, rectangle, foreColor, backColor);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawFocusRectangle(gg, rectangle, foreColor, backColor);
+    }
+
+    /// <summary>
+    ///  Draws a standard selection grab handle used to indicate a component can be directly manipulated.
+    /// </summary>
+    public static void DrawGrabHandle(IDeviceContext deviceContext, Rectangle rectangle, bool primary, bool enabled)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawGrabHandle(g, rectangle, primary, enabled);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawGrabHandle(gg, rectangle, primary, enabled);
+    }
+
+    /// <summary>
+    ///  Draws a grid of one pixel dots in the given rectangle.
+    /// </summary>
+    public static void DrawGrid(IDeviceContext deviceContext, Rectangle area, Size pixelsBetweenDots, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawGrid(g, area, pixelsBetweenDots, backColor);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawGrid(gg, area, pixelsBetweenDots, backColor);
+    }
+
+    /// <summary>
+    ///  Draws a locked selection frame around the given rectangle.
+    /// </summary>
+    public static void DrawLockedFrame(IDeviceContext deviceContext, Rectangle rectangle, bool primary)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawLockedFrame(g, rectangle, primary);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawLockedFrame(gg, rectangle, primary);
+    }
+
+    /// <summary>
+    ///  Draws a menu glyph for a Win32 menu in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, int x, int y, int width, int height, MenuGlyph glyph)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawMenuGlyph(g, x, y, width, height, glyph);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawMenuGlyph(gg, x, y, width, height, glyph);
+    }
+
+    /// <summary>
+    ///  Draws a menu glyph for a Win32 menu in the given rectangle with the given state, replacing black and
+    ///  white with the given colors.
+    /// </summary>
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, int x, int y, int width, int height, MenuGlyph glyph, Color foreColor, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawMenuGlyph(g, x, y, width, height, glyph, foreColor, backColor);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawMenuGlyph(gg, x, y, width, height, glyph, foreColor, backColor);
+    }
+
+    /// <summary>
+    ///  Draws a menu glyph for a Win32 menu in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, Rectangle rectangle, MenuGlyph glyph)
+        => DrawMenuGlyph(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, glyph);
+
+    /// <summary>
+    ///  Draws a menu glyph for a Win32 menu in the given rectangle with the given state, replacing black and
+    ///  white with the given colors.
+    /// </summary>
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, Rectangle rectangle, MenuGlyph glyph, Color foreColor, Color backColor)
+        => DrawMenuGlyph(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, glyph, foreColor, backColor);
+
+    /// <summary>
+    ///  Draws a Win32 three state checkbox control in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawMixedCheckBox(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+        => DrawMixedCheckBox(deviceContext, new Rectangle(x, y, width, height), state);
+
+    /// <summary>
+    ///  Draws a Win32 three state checkbox control in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawMixedCheckBox(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawMixedCheckBox(g, rectangle, state);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawMixedCheckBox(gg, rectangle, state);
+    }
+
+    /// <summary>
+    ///  Draws a Win32 radio button in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawRadioButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+        => DrawRadioButton(deviceContext, new Rectangle(x, y, width, height), state);
+
+    /// <summary>
+    ///  Draws a Win32 radio button in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawRadioButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawRadioButton(g, rectangle, state);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawRadioButton(gg, rectangle, state);
+    }
+
+    /// <summary>
+    ///  Draws a button for a Win32 scroll bar in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawScrollButton(IDeviceContext deviceContext, int x, int y, int width, int height, ScrollButton button, ButtonState state)
+        => DrawScrollButton(deviceContext, new Rectangle(x, y, width, height), button, state);
+
+    /// <summary>
+    ///  Draws a button for a Win32 scroll bar in the given rectangle with the given state.
+    /// </summary>
+    public static void DrawScrollButton(IDeviceContext deviceContext, Rectangle rectangle, ScrollButton button, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawScrollButton(g, rectangle, button, state);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawScrollButton(gg, rectangle, button, state);
+    }
+
+    /// <summary>
+    ///  Draws a standard selection frame around a component that is selected at design time.
+    /// </summary>
+    public static void DrawSelectionFrame(IDeviceContext deviceContext, bool active, Rectangle outsideRect, Rectangle insideRect, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawSelectionFrame(g, active, outsideRect, insideRect, backColor);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawSelectionFrame(gg, active, outsideRect, insideRect, backColor);
+    }
+
+    /// <summary>
+    ///  Draws the border used by controls that render with visual styles.
+    /// </summary>
+    public static void DrawVisualStyleBorder(IDeviceContext deviceContext, Rectangle bounds)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Graphics? g = deviceContext.TryGetGraphics(create: true);
+        if (g is not null)
+        {
+            DrawVisualStyleBorder(g, bounds);
+            return;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using Graphics gg = hdc.HDC.CreateGraphics();
+        DrawVisualStyleBorder(gg, bounds);
+    }
+
     /// <summary>
     ///  Returns a color appropriate for certain elements that are ControlDark in normal color schemes, but for
     ///  which ControlDark does not work in high contrast color schemes.
@@ -390,13 +860,6 @@ public static unsafe partial class ControlPaint
         }
     }
 
-    private static PEN_STYLE BorderStyleToPenStyle(ButtonBorderStyle borderStyle) => borderStyle switch
-    {
-        ButtonBorderStyle.Dotted => PEN_STYLE.PS_DOT,
-        ButtonBorderStyle.Dashed => PEN_STYLE.PS_DASH,
-        _ => PEN_STYLE.PS_SOLID,
-    };
-
     /// <summary>
     ///  Creates a new color that is a object of the given color.
     /// </summary>
@@ -594,8 +1057,7 @@ public static unsafe partial class ControlPaint
         ArgumentNullException.ThrowIfNull(graphics);
 
         DrawBorder(
-            graphics,
-            graphics,
+            (IDeviceContext)graphics,
             bounds,
             leftColor, leftWidth, leftStyle,
             topColor, topWidth, topStyle,
@@ -606,28 +1068,6 @@ public static unsafe partial class ControlPaint
     /// <summary>
     ///  Draws a border of the specified style and color on the given device context.
     /// </summary>
-    /// <param name="deviceContext">The device context to draw on.</param>
-    /// <param name="bounds">The bounds of the border.</param>
-    /// <param name="leftColor">The color of the left edge. The alpha component is ignored.</param>
-    /// <param name="leftWidth">The width of the left edge.</param>
-    /// <param name="leftStyle">The style of the left edge.</param>
-    /// <param name="topColor">The color of the top edge. The alpha component is ignored.</param>
-    /// <param name="topWidth">The width of the top edge.</param>
-    /// <param name="topStyle">The style of the top edge.</param>
-    /// <param name="rightColor">The color of the right edge. The alpha component is ignored.</param>
-    /// <param name="rightWidth">The width of the right edge.</param>
-    /// <param name="rightStyle">The style of the right edge.</param>
-    /// <param name="bottomColor">The color of the bottom edge. The alpha component is ignored.</param>
-    /// <param name="bottomWidth">The width of the bottom edge.</param>
-    /// <param name="bottomStyle">The style of the bottom edge.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">One of the given widths is negative.</exception>
-    /// <remarks>
-    ///  <para>
-    ///   Unlike the <see cref="Graphics"/> overload this always renders with GDI, which does not support alpha
-    ///   blending.
-    ///  </para>
-    /// </remarks>
     public static unsafe void DrawBorder(
         IDeviceContext deviceContext,
         Rectangle bounds,
@@ -638,33 +1078,6 @@ public static unsafe partial class ControlPaint
     {
         ArgumentNullException.ThrowIfNull(deviceContext);
 
-        DrawBorder(
-            deviceContext,
-            graphics: null,
-            bounds,
-            leftColor, leftWidth, leftStyle,
-            topColor, topWidth, topStyle,
-            rightColor, rightWidth, rightStyle,
-            bottomColor, bottomWidth, bottomStyle);
-    }
-
-    /// <summary>
-    ///  Draws a border of the specified style and color on the given device context.
-    /// </summary>
-    /// <param name="graphics">
-    ///  When not <see langword="null"/>, transparent colors and dotted or dashed edges are rendered with GDI+ to
-    ///  keep the behavior of the <see cref="Graphics"/> overload. Must be the same device as
-    ///  <paramref name="deviceContext"/>.
-    /// </param>
-    private static unsafe void DrawBorder(
-        IDeviceContext deviceContext,
-        Graphics? graphics,
-        Rectangle bounds,
-        Color leftColor, int leftWidth, ButtonBorderStyle leftStyle,
-        Color topColor, int topWidth, ButtonBorderStyle topStyle,
-        Color rightColor, int rightWidth, ButtonBorderStyle rightStyle,
-        Color bottomColor, int bottomWidth, ButtonBorderStyle bottomStyle)
-    {
         // Very general, and very slow
         ArgumentOutOfRangeException.ThrowIfNegative(leftWidth);
         ArgumentOutOfRangeException.ThrowIfNegative(topWidth);
@@ -807,24 +1220,29 @@ public static unsafe partial class ControlPaint
             case ButtonBorderStyle.Dashed:
             case ButtonBorderStyle.Solid:
                 {
-                    if (graphics is not null && (topColor.HasTransparency() || topStyle != ButtonBorderStyle.Solid))
-                    {
-                        // Only GDI+ can render transparency and its dash styles do not match the GDI pen styles.
-                        using var pen = topColor.CreateStaticPen(BorderStyleToDashStyle(topStyle));
-
-                        for (int i = 0; i < topWidth; i++)
-                        {
-                            graphics.DrawLine(pen, topLineLefts[i], bounds.Y + i, topLineRights[i], bounds.Y + i);
-                        }
-                    }
-                    else
+                    if (!topColor.HasTransparency() && topStyle == ButtonBorderStyle.Solid)
                     {
                         using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
-                        using CreatePenScope hpen = new(topColor, style: BorderStyleToPenStyle(topStyle));
+                        using CreatePenScope hpen = new(topColor);
                         for (int i = 0; i < topWidth; i++)
                         {
                             // Need to add one to the destination point for GDI to render the same as GDI+
                             hdc.DrawLine(hpen, topLineLefts[i], bounds.Y + i, topLineRights[i] + 1, bounds.Y + i);
+                        }
+                    }
+                    else if (deviceContext.TryGetGraphics(create: true) is Graphics graphics)
+                    {
+                        using var pen = topColor.CreateStaticPen(
+                        topStyle switch
+                        {
+                            ButtonBorderStyle.Dotted => DashStyle.Dot,
+                            ButtonBorderStyle.Dashed => DashStyle.Dash,
+                            _ => DashStyle.Solid,
+                        });
+
+                        for (int i = 0; i < topWidth; i++)
+                        {
+                            graphics.DrawLine(pen, topLineLefts[i], bounds.Y + i, topLineRights[i], bounds.Y + i);
                         }
                     }
 
@@ -861,24 +1279,29 @@ public static unsafe partial class ControlPaint
             case ButtonBorderStyle.Dashed:
             case ButtonBorderStyle.Solid:
                 {
-                    if (graphics is not null && (leftColor.HasTransparency() || leftStyle != ButtonBorderStyle.Solid))
-                    {
-                        // Only GDI+ can render transparency and its dash styles do not match the GDI pen styles.
-                        using var pen = leftColor.CreateStaticPen(BorderStyleToDashStyle(leftStyle));
-
-                        for (int i = 0; i < leftWidth; i++)
-                        {
-                            graphics.DrawLine(pen, bounds.X + i, leftLineTops[i], bounds.X + i, leftLineBottoms[i]);
-                        }
-                    }
-                    else
+                    if (!leftColor.HasTransparency() && leftStyle == ButtonBorderStyle.Solid)
                     {
                         using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
-                        using CreatePenScope hpen = new(leftColor, style: BorderStyleToPenStyle(leftStyle));
+                        using CreatePenScope hpen = new(leftColor);
                         for (int i = 0; i < leftWidth; i++)
                         {
                             // Need to add one to the destination point for GDI to render the same as GDI+
                             hdc.DrawLine(hpen, bounds.X + i, leftLineTops[i], bounds.X + i, leftLineBottoms[i] + 1);
+                        }
+                    }
+                    else if (deviceContext.TryGetGraphics(create: true) is Graphics graphics)
+                    {
+                        using var pen = leftColor.CreateStaticPen(
+                            leftStyle switch
+                            {
+                                ButtonBorderStyle.Dotted => DashStyle.Dot,
+                                ButtonBorderStyle.Dashed => DashStyle.Dash,
+                                _ => DashStyle.Solid,
+                            });
+
+                        for (int i = 0; i < leftWidth; i++)
+                        {
+                            graphics.DrawLine(pen, bounds.X + i, leftLineTops[i], bounds.X + i, leftLineBottoms[i]);
                         }
                     }
 
@@ -915,25 +1338,10 @@ public static unsafe partial class ControlPaint
             case ButtonBorderStyle.Dashed:
             case ButtonBorderStyle.Solid:
                 {
-                    if (graphics is not null && (bottomColor.HasTransparency() || bottomStyle != ButtonBorderStyle.Solid))
-                    {
-                        // Only GDI+ can render transparency and its dash styles do not match the GDI pen styles.
-                        using var pen = bottomColor.CreateStaticPen(BorderStyleToDashStyle(bottomStyle));
-
-                        for (int i = 0; i < bottomWidth; i++)
-                        {
-                            graphics.DrawLine(
-                                pen,
-                                bottomLineLefts[i],
-                                bounds.Y + bounds.Height - 1 - i,
-                                bottomLineRights[i],
-                                bounds.Y + bounds.Height - 1 - i);
-                        }
-                    }
-                    else
+                    if (!bottomColor.HasTransparency() && bottomStyle == ButtonBorderStyle.Solid)
                     {
                         using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
-                        using CreatePenScope hpen = new(bottomColor, style: BorderStyleToPenStyle(bottomStyle));
+                        using CreatePenScope hpen = new(bottomColor);
                         for (int i = 0; i < bottomWidth; i++)
                         {
                             // Need to add one to the destination point for GDI to render the same as GDI+
@@ -942,6 +1350,26 @@ public static unsafe partial class ControlPaint
                                 bottomLineLefts[i],
                                 bounds.Y + bounds.Height - 1 - i,
                                 bottomLineRights[i] + 1,
+                                bounds.Y + bounds.Height - 1 - i);
+                        }
+                    }
+                    else if (deviceContext.TryGetGraphics(create: true) is Graphics graphics)
+                    {
+                        using var pen = bottomColor.CreateStaticPen(
+                            bottomStyle switch
+                            {
+                                ButtonBorderStyle.Dotted => DashStyle.Dot,
+                                ButtonBorderStyle.Dashed => DashStyle.Dash,
+                                _ => DashStyle.Solid,
+                            });
+
+                        for (int i = 0; i < bottomWidth; i++)
+                        {
+                            graphics.DrawLine(
+                                pen,
+                                bottomLineLefts[i],
+                                bounds.Y + bounds.Height - 1 - i,
+                                bottomLineRights[i],
                                 bounds.Y + bounds.Height - 1 - i);
                         }
                     }
@@ -984,25 +1412,10 @@ public static unsafe partial class ControlPaint
             case ButtonBorderStyle.Dashed:
             case ButtonBorderStyle.Solid:
                 {
-                    if (graphics is not null && (rightColor.HasTransparency() || rightStyle != ButtonBorderStyle.Solid))
-                    {
-                        // Only GDI+ can render transparency and its dash styles do not match the GDI pen styles.
-                        using var pen = rightColor.CreateStaticPen(BorderStyleToDashStyle(rightStyle));
-
-                        for (int i = 0; i < rightWidth; i++)
-                        {
-                            graphics.DrawLine(
-                                pen,
-                                bounds.X + bounds.Width - 1 - i,
-                                rightLineTops[i],
-                                bounds.X + bounds.Width - 1 - i,
-                                rightLineBottoms[i]);
-                        }
-                    }
-                    else
+                    if (!rightColor.HasTransparency() && rightStyle == ButtonBorderStyle.Solid)
                     {
                         using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
-                        using CreatePenScope hpen = new(rightColor, style: BorderStyleToPenStyle(rightStyle));
+                        using CreatePenScope hpen = new(rightColor);
                         for (int i = 0; i < rightWidth; i++)
                         {
                             // Need to add one to the destination point for GDI to render the same as GDI+
@@ -1012,6 +1425,26 @@ public static unsafe partial class ControlPaint
                                 rightLineTops[i],
                                 bounds.X + bounds.Width - 1 - i,
                                 rightLineBottoms[i] + 1);
+                        }
+                    }
+                    else if (deviceContext.TryGetGraphics(create: true) is Graphics graphics)
+                    {
+                        using var pen = rightColor.CreateStaticPen(
+                            rightStyle switch
+                            {
+                                ButtonBorderStyle.Dotted => DashStyle.Dot,
+                                ButtonBorderStyle.Dashed => DashStyle.Dash,
+                                _ => DashStyle.Solid,
+                            });
+
+                        for (int i = 0; i < rightWidth; i++)
+                        {
+                            graphics.DrawLine(
+                                pen,
+                                bounds.X + bounds.Width - 1 - i,
+                                rightLineTops[i],
+                                bounds.X + bounds.Width - 1 - i,
+                                rightLineBottoms[i]);
                         }
                     }
 
@@ -1219,35 +1652,32 @@ public static unsafe partial class ControlPaint
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        if (color.HasTransparency() || style != ButtonBorderStyle.Solid)
+        {
+            // GDI+ right and bottom DrawRectangle border are 1 greater than GDI
+            bounds = new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
+
+            Graphics? graphics = context.TryGetGraphics(create: true);
+            if (graphics is not null)
+            {
+                if (style == ButtonBorderStyle.Solid)
+                {
+                    using var pen = color.GetCachedPenScope();
+                    graphics.DrawRectangle(pen, bounds);
+                }
+                else
+                {
+                    using var pen = color.CreateStaticPen(BorderStyleToDashStyle(style));
+                    graphics.DrawRectangle(pen, bounds);
+                }
+
+                return;
+            }
+        }
+
         using DeviceContextHdcScope hdc = context.ToHdcScope();
-        using CreatePenScope hpen = new(color, style: BorderStyleToPenStyle(style));
+        using CreatePenScope hpen = new(color);
         hdc.DrawRectangle(bounds, hpen);
-    }
-
-    private static void DrawBorderSimple(
-        Graphics graphics,
-        Rectangle bounds,
-        Color color,
-        ButtonBorderStyle style = ButtonBorderStyle.Solid)
-    {
-        if (!color.HasTransparency() && style == ButtonBorderStyle.Solid)
-        {
-            DrawBorderSimple((IDeviceContext)graphics, bounds, color, style);
-            return;
-        }
-
-        // GDI+ right and bottom DrawRectangle borders are one pixel greater than GDI.
-        bounds = new Rectangle(bounds.X, bounds.Y, bounds.Width - 1, bounds.Height - 1);
-        if (style == ButtonBorderStyle.Solid)
-        {
-            using var pen = color.GetCachedPenScope();
-            graphics.DrawRectangle(pen, bounds);
-        }
-        else
-        {
-            using var pen = color.CreateStaticPen(BorderStyleToDashStyle(style));
-            graphics.DrawRectangle(pen, bounds);
-        }
     }
 
     /// <summary>
@@ -2014,6 +2444,9 @@ public static unsafe partial class ControlPaint
         }
     }
 
+    /// <summary>
+    ///  Draws a size grip on the given device context.
+    /// </summary>
     public static void DrawSizeGrip(
         IDeviceContext deviceContext,
         Color backColor,
@@ -2044,12 +2477,6 @@ public static unsafe partial class ControlPaint
             hdc.DrawLine(hpenBright, right - (i + 3) - 2, bottom, right + 1, bottom - (i + 3) - 3);
         }
     }
-
-    /// <summary>
-    ///  Draws a size grip at the given location. The color of the size grip is based on the given background color.
-    /// </summary>
-    public static void DrawSizeGrip(IDeviceContext deviceContext, Color backColor, Rectangle bounds)
-        => DrawSizeGrip(deviceContext, backColor, bounds.X, bounds.Y, bounds.Width, bounds.Height);
 
     /// <summary>
     ///  Draws a string in the style appropriate for disabled items.
