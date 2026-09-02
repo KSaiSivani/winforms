@@ -603,15 +603,239 @@ public class TextRendererTests
                         bounds: new Rectangle(0, 0, int.MaxValue, int.MaxValue), Color.Blue, flags: default)),
             ];
 
+    [WinFormsFact]
+    public void TextRenderer_DrawText_WithOutputNoEllipsis_ReturnsInput()
+    {
+        using Bitmap image = new(100, 30);
+        using Graphics graphics = Graphics.FromImage(image);
+
+        TextRenderer.DrawText(
+            graphics,
+            "Acrylic",
+            SystemFonts.DefaultFont,
+            new Rectangle(Point.Empty, image.Size),
+            Color.Transparent,
+            Color.Empty,
+            TextFormatFlags.SingleLine,
+            out string outputText);
+
+        Assert.Equal("Acrylic", outputText);
+    }
+
+    [WinFormsFact]
+    public void TextRenderer_DrawText_WithOutputSameSpan_ReturnsInput()
+    {
+        using Bitmap image = new(100, 30);
+        using Graphics graphics = Graphics.FromImage(image);
+        char[] text = "Acrylic".ToCharArray();
+
+        TextRenderer.DrawText(
+            graphics,
+            text,
+            SystemFonts.DefaultFont,
+            new Rectangle(Point.Empty, image.Size),
+            Color.Transparent,
+            Color.Empty,
+            TextFormatFlags.SingleLine,
+            text,
+            out int outputTextLength);
+
+        Assert.Equal(text.Length, outputTextLength);
+        Assert.Equal("Acrylic", new string(text));
+    }
+
+    [WinFormsTheory]
+    [InlineData(TextFormatFlags.PathEllipsis)]
+    [InlineData(TextFormatFlags.WordEllipsis)]
+    public void TextRenderer_DrawText_WithEllipsisOutput_ReturnsRenderedText(TextFormatFlags ellipsis)
+    {
+        const string Text = @"C:\verylongfolder\anotherfolder\filename.txt";
+        TextFormatFlags flags = TextFormatFlags.SingleLine | ellipsis;
+        using Bitmap image = new(100, 30);
+        using Graphics graphics = Graphics.FromImage(image);
+
+        TextRenderer.DrawText(
+            graphics,
+            Text,
+            SystemFonts.DefaultFont,
+            new Rectangle(0, 0, 70, 30),
+            Color.Black,
+            Color.Empty,
+            flags,
+            out string outputText);
+
+        Assert.NotEqual(Text, outputText);
+        Assert.Contains("...", outputText);
+
+        char[] outputBuffer = new char[Text.Length];
+        TextRenderer.DrawText(
+            graphics,
+            Text,
+            SystemFonts.DefaultFont,
+            new Rectangle(0, 0, 70, 30),
+            Color.Black,
+            Color.Empty,
+            flags,
+            outputBuffer,
+            out int outputTextLength);
+
+        Assert.Equal(outputText, new string(outputBuffer, 0, outputTextLength));
+
+        char[] sharedBuffer = Text.ToCharArray();
+        TextRenderer.DrawText(
+            graphics,
+            sharedBuffer,
+            SystemFonts.DefaultFont,
+            new Rectangle(0, 0, 70, 30),
+            Color.Black,
+            Color.Empty,
+            flags,
+            sharedBuffer,
+            out outputTextLength);
+
+        Assert.Equal(outputText, new string(sharedBuffer, 0, outputTextLength));
+    }
+
+    [WinFormsTheory]
+    [InlineData(TextFormatFlags.PathEllipsis)]
+    [InlineData(TextFormatFlags.WordEllipsis)]
+    public void TextRenderer_MeasureText_WithEllipsisOutput_ReturnsRenderedText(TextFormatFlags ellipsis)
+    {
+        const string Text = @"C:\verylongfolder\anotherfolder\filename.txt";
+        TextFormatFlags flags = TextFormatFlags.SingleLine | ellipsis;
+
+        Size size = TextRenderer.MeasureText(
+            Text,
+            SystemFonts.DefaultFont,
+            new Size(70, 30),
+            flags,
+            out string outputText);
+
+        Assert.False(size.IsEmpty);
+        Assert.NotEqual(Text, outputText);
+        Assert.Contains("...", outputText);
+
+        char[] outputBuffer = new char[Text.Length];
+        Size spanSize = TextRenderer.MeasureText(
+            Text,
+            SystemFonts.DefaultFont,
+            new Size(70, 30),
+            flags,
+            outputBuffer,
+            out int outputTextLength);
+
+        Assert.Equal(size, spanSize);
+        Assert.Equal(outputText, new string(outputBuffer, 0, outputTextLength));
+    }
+
+    [WinFormsFact]
+    public void TextRenderer_WithEllipsisOutputLongerThanInput_RequiresResultCapacity()
+    {
+        const string Text = "A";
+        TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.WordEllipsis;
+        using Bitmap image = new(10, 30);
+        using Graphics graphics = Graphics.FromImage(image);
+
+        TextRenderer.DrawText(
+            graphics,
+            Text,
+            SystemFonts.DefaultFont,
+            new Rectangle(0, 0, 1, 30),
+            Color.Black,
+            Color.Empty,
+            flags,
+            out string drawOutput);
+
+        Assert.True(drawOutput.Length > Text.Length);
+
+        char[] outputBuffer = new char[Text.Length + 4];
+        TextRenderer.DrawText(
+            graphics,
+            Text,
+            SystemFonts.DefaultFont,
+            new Rectangle(0, 0, 1, 30),
+            Color.Black,
+            Color.Empty,
+            flags,
+            outputBuffer,
+            out int outputTextLength);
+
+        Assert.Equal(drawOutput, new string(outputBuffer, 0, outputTextLength));
+
+        char[] minimumBuffer = new char[Text.Length];
+        Assert.Throws<ArgumentException>(
+            "outputTextBuffer",
+            () => TextRenderer.DrawText(
+                graphics,
+                Text,
+                SystemFonts.DefaultFont,
+                new Rectangle(0, 0, 1, 30),
+                Color.Black,
+                Color.Empty,
+                flags,
+                minimumBuffer,
+                out _));
+
+        _ = TextRenderer.MeasureText(
+            Text,
+            SystemFonts.DefaultFont,
+            new Size(1, 30),
+            flags,
+            out string measureOutput);
+
+        Assert.True(measureOutput.Length > Text.Length);
+        Assert.Throws<ArgumentException>(
+            "outputTextBuffer",
+            () => TextRenderer.MeasureText(
+                Text,
+                SystemFonts.DefaultFont,
+                new Size(1, 30),
+                flags,
+                minimumBuffer,
+                out _));
+    }
+
+    [WinFormsFact]
+    public void TextRenderer_WithOutputBufferTooSmall_ThrowsArgumentException()
+    {
+        const string Text = "Acrylic";
+        char[] outputBuffer = new char[Text.Length - 1];
+        using Bitmap image = new(100, 30);
+        using Graphics graphics = Graphics.FromImage(image);
+
+        Assert.Throws<ArgumentException>(
+            "outputTextBuffer",
+            () => TextRenderer.DrawText(
+                graphics,
+                Text,
+                SystemFonts.DefaultFont,
+                Point.Empty,
+                Color.Black,
+                Color.Empty,
+                TextFormatFlags.Default,
+                outputBuffer,
+                out _));
+
+        Assert.Throws<ArgumentException>(
+            "outputTextBuffer",
+            () => TextRenderer.MeasureText(
+                Text,
+                SystemFonts.DefaultFont,
+                Size.Empty,
+                TextFormatFlags.Default,
+                outputBuffer,
+                out _));
+    }
+
     [Theory]
-    [MemberData(nameof(TextRenderer_Span_ModifyString_ThrowsArgumentOutOfRange_TestData))]
-    public void TextRenderer_Span_ModifyString_ThrowsArgumentOutOfRange(Action action)
+    [MemberData(nameof(TextRenderer_ModifyString_ThrowsArgumentOutOfRange_TestData))]
+    public void TextRenderer_ModifyString_ThrowsArgumentOutOfRange(Action action)
     {
         Assert.Throws<ArgumentOutOfRangeException>("flags", action);
     }
 
 #pragma warning disable CS0618 // Type or member is obsolete
-    public static TheoryData<Action> TextRenderer_Span_ModifyString_ThrowsArgumentOutOfRange_TestData()
+    public static TheoryData<Action> TextRenderer_ModifyString_ThrowsArgumentOutOfRange_TestData()
         =>
         [
             new(() => TextRenderer.DrawText(
@@ -655,6 +879,72 @@ public class TextRendererTests
                 null,
                 default,
                 TextFormatFlags.ModifyString)),
+            new(() => TextRenderer.DrawText(
+                MockDC.Instance,
+                string.Empty,
+                null,
+                default(Point),
+                Color.Empty,
+                Color.Empty,
+                TextFormatFlags.ModifyString,
+                out _)),
+            new(() => TextRenderer.DrawText(
+                MockDC.Instance,
+                string.Empty,
+                null,
+                default(Rectangle),
+                Color.Empty,
+                Color.Empty,
+                TextFormatFlags.ModifyString,
+                out _)),
+            new(() => TextRenderer.MeasureText(
+                MockDC.Instance,
+                string.Empty,
+                null,
+                default,
+                TextFormatFlags.ModifyString,
+                out _)),
+            new(() => TextRenderer.MeasureText(
+                string.Empty,
+                null,
+                default,
+                TextFormatFlags.ModifyString,
+                out _)),
+            new(() => TextRenderer.DrawText(
+                MockDC.Instance,
+                string.Empty,
+                null,
+                default(Point),
+                Color.Empty,
+                Color.Empty,
+                TextFormatFlags.ModifyString,
+                Array.Empty<char>(),
+                out _)),
+            new(() => TextRenderer.DrawText(
+                MockDC.Instance,
+                string.Empty,
+                null,
+                default(Rectangle),
+                Color.Empty,
+                Color.Empty,
+                TextFormatFlags.ModifyString,
+                Array.Empty<char>(),
+                out _)),
+            new(() => TextRenderer.MeasureText(
+                MockDC.Instance,
+                string.Empty,
+                null,
+                default,
+                TextFormatFlags.ModifyString,
+                Array.Empty<char>(),
+                out _)),
+            new(() => TextRenderer.MeasureText(
+                string.Empty,
+                null,
+                default,
+                TextFormatFlags.ModifyString,
+                Array.Empty<char>(),
+                out _)),
         ];
 #pragma warning restore CS0618
 

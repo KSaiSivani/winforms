@@ -1,6 +1,7 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Buffers;
 using System.Drawing;
 using System.Drawing.Text;
 
@@ -366,6 +367,342 @@ public static class TextRenderer
         hdc.DrawText(text, hfont, bounds, foreColor, flags, backColor);
     }
 
+    // DrawTextEx can append up to four characters when DT_MODIFYSTRING is used.
+    private const int MaxTextModificationCharacters = 4;
+
+    private static string? DrawTextInternalWithOutput(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Point pt,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags)
+        => DrawTextInternalWithOutput(dc, text, font, new Rectangle(pt, MaxSize), foreColor, backColor, flags);
+
+    private static string? DrawTextInternalWithOutput(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Rectangle bounds,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags)
+    {
+        ArgumentNullException.ThrowIfNull(dc);
+        flags = BlockModifyString(flags);
+
+        if (string.IsNullOrEmpty(text))
+        {
+            DrawTextInternal(dc, text, font, bounds, foreColor, backColor, flags);
+            return text;
+        }
+
+        char[] buffer = ArrayPool<char>.Shared.Rent(text.Length + MaxTextModificationCharacters);
+        try
+        {
+            Span<char> output = buffer.AsSpan(0, text.Length + MaxTextModificationCharacters);
+            DrawTextInternalWithOutput(
+                dc,
+                text,
+                font,
+                bounds,
+                foreColor,
+                backColor,
+                flags,
+                output,
+                out int outputLength);
+
+            return new string(output[..outputLength]);
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
+        }
+    }
+
+    private static void DrawTextInternalWithOutput(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Point pt,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+        => DrawTextInternalWithOutput(dc, text, font, new Rectangle(pt, MaxSize), foreColor, backColor, flags, outputTextBuffer, out outputTextLength);
+
+    private static void DrawTextInternalWithOutput(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Rectangle bounds,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        ArgumentNullException.ThrowIfNull(dc);
+        flags = BlockModifyString(flags);
+        ValidateOutputTextBuffer(text, outputTextBuffer);
+
+        if (!WantsOutputText(flags))
+        {
+            text.CopyTo(outputTextBuffer);
+            outputTextLength = text.Length;
+            DrawTextInternal(dc, text, font, bounds, foreColor, backColor, flags);
+            return;
+        }
+
+        if (text.IsEmpty || foreColor == Color.Transparent)
+        {
+            text.CopyTo(outputTextBuffer);
+            outputTextLength = text.Length;
+            return;
+        }
+
+        // This MUST come before retrieving the HDC, which locks the Graphics object
+        FONT_QUALITY quality = FontQualityFromTextRenderingHint(dc);
+
+        using DeviceContextHdcScope hdc = dc.ToHdcScope(GetApplyStateFlags(dc, flags));
+        using var hfont = GetFontOrHdcHFONT(font, quality, hdc);
+
+        char[] buffer = ArrayPool<char>.Shared.Rent(text.Length + MaxTextModificationCharacters);
+        try
+        {
+            Span<char> nativeBuffer = buffer.AsSpan(0, text.Length + MaxTextModificationCharacters);
+            nativeBuffer.Clear();
+            text.CopyTo(nativeBuffer);
+
+#pragma warning disable CS0618 // Type or member is obsolete - ModifyString is required for the native output buffer.
+            TextFormatFlags nativeFlags = flags | TextFormatFlags.ModifyString;
+#pragma warning restore CS0618
+
+            hdc.HDC.DrawText(
+                nativeBuffer,
+                text.Length,
+                hfont,
+                bounds,
+                foreColor,
+                nativeFlags,
+                backColor);
+
+            outputTextLength = CopyOutputText(nativeBuffer, outputTextBuffer);
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
+        }
+    }
+
+    private static Size MeasureTextInternalWithOutput(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        ArgumentNullException.ThrowIfNull(dc);
+        flags = BlockModifyString(flags);
+        ValidateOutputTextBuffer(text, outputTextBuffer);
+
+        if (!WantsOutputText(flags))
+        {
+            text.CopyTo(outputTextBuffer);
+            outputTextLength = text.Length;
+            return MeasureTextInternal(dc, text, font, proposedSize, flags);
+        }
+
+        if (text.IsEmpty)
+        {
+            outputTextLength = 0;
+            return Size.Empty;
+        }
+
+        // This MUST come before retrieving the HDC, which locks the Graphics object
+        FONT_QUALITY quality = FontQualityFromTextRenderingHint(dc);
+
+        using DeviceContextHdcScope hdc = dc.ToHdcScope(GetApplyStateFlags(dc, flags));
+        using var hfont = GetFontOrHdcHFONT(font, quality, hdc);
+
+        char[] buffer = ArrayPool<char>.Shared.Rent(text.Length + MaxTextModificationCharacters);
+        try
+        {
+            Span<char> nativeBuffer = buffer.AsSpan(0, text.Length + MaxTextModificationCharacters);
+            nativeBuffer.Clear();
+            text.CopyTo(nativeBuffer);
+
+#pragma warning disable CS0618 // Type or member is obsolete - ModifyString is required for the native output buffer.
+            TextFormatFlags nativeFlags = flags | TextFormatFlags.ModifyString;
+#pragma warning restore CS0618
+
+            Size size = hdc.HDC.MeasureText(nativeBuffer, text.Length, hfont, proposedSize, nativeFlags);
+            outputTextLength = CopyOutputText(nativeBuffer, outputTextBuffer);
+            return size;
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
+        }
+    }
+
+    private static Size MeasureTextInternalWithOutput(
+        ReadOnlySpan<char> text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        flags = BlockModifyString(flags);
+        ValidateOutputTextBuffer(text, outputTextBuffer);
+
+        if (!WantsOutputText(flags))
+        {
+            text.CopyTo(outputTextBuffer);
+            outputTextLength = text.Length;
+            return MeasureTextInternal(text, font, proposedSize, flags);
+        }
+
+        if (text.IsEmpty)
+        {
+            outputTextLength = 0;
+            return Size.Empty;
+        }
+
+        using var screen = GdiCache.GetScreenHdc();
+        using var hfont = GetFontOrHdcHFONT(font, FONT_QUALITY.DEFAULT_QUALITY, screen);
+
+        char[] buffer = ArrayPool<char>.Shared.Rent(text.Length + MaxTextModificationCharacters);
+        try
+        {
+            Span<char> nativeBuffer = buffer.AsSpan(0, text.Length + MaxTextModificationCharacters);
+            nativeBuffer.Clear();
+            text.CopyTo(nativeBuffer);
+
+#pragma warning disable CS0618 // Type or member is obsolete - ModifyString is required for the native output buffer.
+            TextFormatFlags nativeFlags = flags | TextFormatFlags.ModifyString;
+#pragma warning restore CS0618
+
+            Size size = screen.HDC.MeasureText(nativeBuffer, text.Length, hfont, proposedSize, nativeFlags);
+            outputTextLength = CopyOutputText(nativeBuffer, outputTextBuffer);
+            return size;
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
+        }
+    }
+
+    private static Size MeasureTextInternalWithOutput(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        ArgumentNullException.ThrowIfNull(dc);
+        flags = BlockModifyString(flags);
+
+        if (string.IsNullOrEmpty(text))
+        {
+            outputText = text;
+            return MeasureTextInternal(dc, text, font, proposedSize, flags);
+        }
+
+        char[] buffer = ArrayPool<char>.Shared.Rent(text.Length + MaxTextModificationCharacters);
+        try
+        {
+            Span<char> output = buffer.AsSpan(0, text.Length + MaxTextModificationCharacters);
+            Size size = MeasureTextInternalWithOutput(
+                dc,
+                text,
+                font,
+                proposedSize,
+                flags,
+                output,
+                out int outputLength);
+
+            outputText = new string(output[..outputLength]);
+            return size;
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
+        }
+    }
+
+    private static Size MeasureTextInternalWithOutput(
+        string? text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        flags = BlockModifyString(flags);
+
+        if (string.IsNullOrEmpty(text))
+        {
+            outputText = text;
+            return MeasureTextInternal(text, font, proposedSize, flags);
+        }
+
+        char[] buffer = ArrayPool<char>.Shared.Rent(text.Length + MaxTextModificationCharacters);
+        try
+        {
+            Span<char> output = buffer.AsSpan(0, text.Length + MaxTextModificationCharacters);
+            Size size = MeasureTextInternalWithOutput(
+                text,
+                font,
+                proposedSize,
+                flags,
+                output,
+                out int outputLength);
+
+            outputText = new string(output[..outputLength]);
+            return size;
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
+        }
+    }
+
+    private static bool WantsOutputText(TextFormatFlags flags)
+        => flags.HasFlag(TextFormatFlags.PathEllipsis)
+            || flags.HasFlag(TextFormatFlags.WordEllipsis);
+
+    private static void ValidateOutputTextBuffer(ReadOnlySpan<char> text, Span<char> outputTextBuffer)
+    {
+        if (outputTextBuffer.Length < text.Length)
+        {
+            throw new ArgumentException(
+                "The output text buffer must be at least as long as the input text.",
+                nameof(outputTextBuffer));
+        }
+    }
+
+    private static int CopyOutputText(ReadOnlySpan<char> nativeBuffer, Span<char> outputTextBuffer)
+    {
+        int terminatorIndex = nativeBuffer.IndexOf('\0');
+        int outputLength = terminatorIndex >= 0 ? terminatorIndex : nativeBuffer.Length;
+
+        if (outputTextBuffer.Length < outputLength)
+        {
+            throw new ArgumentException(
+                "The output text buffer is too small for the rendered text.",
+                nameof(outputTextBuffer));
+        }
+
+        nativeBuffer[..outputLength].CopyTo(outputTextBuffer);
+        return outputLength;
+    }
+
     private static TextFormatFlags BlockModifyString(TextFormatFlags flags)
     {
 #pragma warning disable CS0618 // Type or member is obsolete - ModifyString is obsolete
@@ -474,6 +811,256 @@ public static class TextRenderer
     /// <exception cref="ArgumentNullException"><paramref name="dc"/> is null.</exception>
     public static Size MeasureText(IDeviceContext dc, ReadOnlySpan<char> text, Font? font, Size proposedSize)
         => MeasureTextInternal(dc, text, font, proposedSize);
+
+    /// <summary>
+    ///  Draws text at the specified location and returns the text rendered by Windows.
+    /// </summary>
+    /// <param name="dc">The device context in which to draw the text.</param>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="font">The font to apply to the drawn text.</param>
+    /// <param name="pt">The upper-left corner of the drawn text.</param>
+    /// <param name="foreColor">The color of the drawn text.</param>
+    /// <param name="backColor">
+    ///  The background color of the drawn text. Specify <see cref="Color.Empty"/> for a transparent background.
+    /// </param>
+    /// <param name="flags">The formatting instructions to apply to the drawn text.</param>
+    /// <param name="outputText">
+    ///  The text rendered by Windows when path or word ellipsis is specified; otherwise, <paramref name="text"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="dc"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///  <see cref="TextFormatFlags.ModifyString"/> is set.
+    /// </exception>
+    public static void DrawText(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Point pt,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        outputText = DrawTextInternalWithOutput(dc, text, font, pt, foreColor, backColor, flags);
+    }
+
+    /// <summary>
+    ///  Draws text at the specified location and copies the text rendered by Windows to an output buffer.
+    /// </summary>
+    /// <param name="dc">The device context in which to draw the text.</param>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="font">The font to apply to the drawn text.</param>
+    /// <param name="pt">The upper-left corner of the drawn text.</param>
+    /// <param name="foreColor">The color of the drawn text.</param>
+    /// <param name="backColor">
+    ///  The background color of the drawn text. Specify <see cref="Color.Empty"/> for a transparent background.
+    /// </param>
+    /// <param name="flags">The formatting instructions to apply to the drawn text.</param>
+    /// <param name="outputTextBuffer">
+    ///  The destination for the rendered text. The buffer must be at least as long as <paramref name="text"/>.
+    /// </param>
+    /// <param name="outputTextLength">The number of characters copied to <paramref name="outputTextBuffer"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="dc"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    ///  <paramref name="outputTextBuffer"/> is too small for the input or rendered text.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///  <see cref="TextFormatFlags.ModifyString"/> is set.
+    /// </exception>
+    public static void DrawText(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Point pt,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        DrawTextInternalWithOutput(dc, text, font, pt, foreColor, backColor, flags, outputTextBuffer, out outputTextLength);
+    }
+
+    /// <summary>
+    ///  Draws text within the specified bounds and returns the text rendered by Windows.
+    /// </summary>
+    /// <param name="dc">The device context in which to draw the text.</param>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="font">The font to apply to the drawn text.</param>
+    /// <param name="bounds">The bounds of the drawn text.</param>
+    /// <param name="foreColor">The color of the drawn text.</param>
+    /// <param name="backColor">
+    ///  The background color of the drawn text. Specify <see cref="Color.Empty"/> for a transparent background.
+    /// </param>
+    /// <param name="flags">The formatting instructions to apply to the drawn text.</param>
+    /// <param name="outputText">
+    ///  The text rendered by Windows when path or word ellipsis is specified; otherwise, <paramref name="text"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="dc"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///  <see cref="TextFormatFlags.ModifyString"/> is set.
+    /// </exception>
+    public static void DrawText(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Rectangle bounds,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        outputText = DrawTextInternalWithOutput(dc, text, font, bounds, foreColor, backColor, flags);
+    }
+
+    /// <summary>
+    ///  Draws text within the specified bounds and copies the text rendered by Windows to an output buffer.
+    /// </summary>
+    /// <param name="dc">The device context in which to draw the text.</param>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="font">The font to apply to the drawn text.</param>
+    /// <param name="bounds">The bounds of the drawn text.</param>
+    /// <param name="foreColor">The color of the drawn text.</param>
+    /// <param name="backColor">
+    ///  The background color of the drawn text. Specify <see cref="Color.Empty"/> for a transparent background.
+    /// </param>
+    /// <param name="flags">The formatting instructions to apply to the drawn text.</param>
+    /// <param name="outputTextBuffer">
+    ///  The destination for the rendered text. The buffer must be at least as long as <paramref name="text"/>.
+    /// </param>
+    /// <param name="outputTextLength">The number of characters copied to <paramref name="outputTextBuffer"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="dc"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    ///  <paramref name="outputTextBuffer"/> is too small for the input or rendered text.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///  <see cref="TextFormatFlags.ModifyString"/> is set.
+    /// </exception>
+    public static void DrawText(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Rectangle bounds,
+        Color foreColor,
+        Color backColor,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        DrawTextInternalWithOutput(dc, text, font, bounds, foreColor, backColor, flags, outputTextBuffer, out outputTextLength);
+    }
+
+    /// <summary>
+    ///  Measures text and returns the text rendered by Windows.
+    /// </summary>
+    /// <param name="dc">The device context in which to measure the text.</param>
+    /// <param name="text">The text to measure.</param>
+    /// <param name="font">The font to apply to the measured text.</param>
+    /// <param name="proposedSize">The initial bounding size for the text.</param>
+    /// <param name="flags">The formatting instructions to apply to the measured text.</param>
+    /// <param name="outputText">
+    ///  The text rendered by Windows when path or word ellipsis is specified; otherwise, <paramref name="text"/>.
+    /// </param>
+    /// <returns>The measured size of the text.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="dc"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///  <see cref="TextFormatFlags.ModifyString"/> is set.
+    /// </exception>
+    public static Size MeasureText(
+        IDeviceContext dc,
+        string? text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        return MeasureTextInternalWithOutput(dc, text, font, proposedSize, flags, out outputText);
+    }
+
+    /// <summary>
+    ///  Measures text and copies the text rendered by Windows to an output buffer.
+    /// </summary>
+    /// <param name="dc">The device context in which to measure the text.</param>
+    /// <param name="text">The text to measure.</param>
+    /// <param name="font">The font to apply to the measured text.</param>
+    /// <param name="proposedSize">The initial bounding size for the text.</param>
+    /// <param name="flags">The formatting instructions to apply to the measured text.</param>
+    /// <param name="outputTextBuffer">
+    ///  The destination for the rendered text. The buffer must be at least as long as <paramref name="text"/>.
+    /// </param>
+    /// <param name="outputTextLength">The number of characters copied to <paramref name="outputTextBuffer"/>.</param>
+    /// <returns>The measured size of the text.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="dc"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    ///  <paramref name="outputTextBuffer"/> is too small for the input or rendered text.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///  <see cref="TextFormatFlags.ModifyString"/> is set.
+    /// </exception>
+    public static Size MeasureText(
+        IDeviceContext dc,
+        ReadOnlySpan<char> text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        return MeasureTextInternalWithOutput(dc, text, font, proposedSize, flags, outputTextBuffer, out outputTextLength);
+    }
+
+    /// <summary>
+    ///  Measures text and returns the text rendered by Windows.
+    /// </summary>
+    /// <param name="text">The text to measure.</param>
+    /// <param name="font">The font to apply to the measured text.</param>
+    /// <param name="proposedSize">The initial bounding size for the text.</param>
+    /// <param name="flags">The formatting instructions to apply to the measured text.</param>
+    /// <param name="outputText">
+    ///  The text rendered by Windows when path or word ellipsis is specified; otherwise, <paramref name="text"/>.
+    /// </param>
+    /// <returns>The measured size of the text.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///  <see cref="TextFormatFlags.ModifyString"/> is set.
+    /// </exception>
+    public static Size MeasureText(
+        string? text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        out string? outputText)
+    {
+        return MeasureTextInternalWithOutput(text, font, proposedSize, flags, out outputText);
+    }
+
+    /// <summary>
+    ///  Measures text and copies the text rendered by Windows to an output buffer.
+    /// </summary>
+    /// <param name="text">The text to measure.</param>
+    /// <param name="font">The font to apply to the measured text.</param>
+    /// <param name="proposedSize">The initial bounding size for the text.</param>
+    /// <param name="flags">The formatting instructions to apply to the measured text.</param>
+    /// <param name="outputTextBuffer">
+    ///  The destination for the rendered text. The buffer must be at least as long as <paramref name="text"/>.
+    /// </param>
+    /// <param name="outputTextLength">The number of characters copied to <paramref name="outputTextBuffer"/>.</param>
+    /// <returns>The measured size of the text.</returns>
+    /// <exception cref="ArgumentException">
+    ///  <paramref name="outputTextBuffer"/> is too small for the input or rendered text.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///  <see cref="TextFormatFlags.ModifyString"/> is set.
+    /// </exception>
+    public static Size MeasureText(
+        ReadOnlySpan<char> text,
+        Font? font,
+        Size proposedSize,
+        TextFormatFlags flags,
+        Span<char> outputTextBuffer,
+        out int outputTextLength)
+    {
+        return MeasureTextInternalWithOutput(text, font, proposedSize, flags, outputTextBuffer, out outputTextLength);
+    }
 
     public static Size MeasureText(
         IDeviceContext dc,

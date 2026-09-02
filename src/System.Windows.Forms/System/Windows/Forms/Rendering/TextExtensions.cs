@@ -98,6 +98,61 @@ internal static class TextExtensions
     }
 
     /// <summary>
+    ///  Draws text from a writable buffer that can be modified by <c>DrawTextEx</c>.
+    /// </summary>
+    public static unsafe void DrawText(
+        this HDC hdc,
+        Span<char> text,
+        int textLength,
+        FontCache.Scope font,
+        Rectangle bounds,
+        Color foreColor,
+        TextFormatFlags flags,
+        Color backColor = default)
+    {
+        if (textLength == 0 || foreColor == Color.Transparent)
+        {
+            return;
+        }
+
+        (DRAW_TEXT_FORMAT dt, TextPaddingOptions padding) = SplitTextFormatFlags(flags);
+
+        // DrawText requires default text alignment.
+        using SetTextAlignmentScope alignment = new(hdc, default);
+
+        // Color empty means use the one currently selected in the dc.
+        using var textColor = foreColor.IsEmpty ? default : new SetTextColorScope(hdc, foreColor);
+        using SelectObjectScope fontSelection = new(hdc, (HFONT)font);
+
+        BACKGROUND_MODE newBackGroundMode = (backColor.IsEmpty || backColor == Color.Transparent)
+            ? BACKGROUND_MODE.TRANSPARENT
+            : BACKGROUND_MODE.OPAQUE;
+
+        using SetBkModeScope backgroundMode = new(hdc, newBackGroundMode);
+        using var backgroundColor = newBackGroundMode != BACKGROUND_MODE.TRANSPARENT
+            ? new SetBackgroundColorScope(hdc, backColor)
+            : default;
+
+        DRAWTEXTPARAMS dtparams = GetTextMargins(font, padding);
+
+        bounds = AdjustForVerticalAlignment(hdc, text[..textLength], bounds, dt, &dtparams);
+
+        // Adjust unbounded rect to avoid overflow.
+        if (bounds.Width == int.MaxValue)
+        {
+            bounds.Width -= bounds.X;
+        }
+
+        if (bounds.Height == int.MaxValue)
+        {
+            bounds.Height -= bounds.Y;
+        }
+
+        RECT rect = bounds;
+        PInvoke.DrawTextEx(hdc, text, textLength, &rect, dt, &dtparams);
+    }
+
+    /// <summary>
     ///  Get the bounding box internal text padding to be used when drawing text.
     /// </summary>
     public static DRAWTEXTPARAMS GetTextMargins(
@@ -263,6 +318,58 @@ internal static class TextExtensions
 
         dt |= DRAW_TEXT_FORMAT.DT_CALCRECT;
         PInvoke.DrawTextEx(hdc, text, &rect, dt, &dtparams);
+
+        return rect.Size;
+    }
+
+    /// <summary>
+    ///  Measures text from a writable buffer that can be modified by <c>DrawTextEx</c>.
+    /// </summary>
+    public static unsafe Size MeasureText(
+        this HDC hdc,
+        Span<char> text,
+        int textLength,
+        FontCache.Scope font,
+        Size proposedSize,
+        TextFormatFlags flags)
+    {
+        (DRAW_TEXT_FORMAT dt, TextPaddingOptions padding) = SplitTextFormatFlags(flags);
+
+        if (textLength == 0)
+        {
+            return Size.Empty;
+        }
+
+        DRAWTEXTPARAMS dtparams = GetTextMargins(font, padding);
+
+        int minWidth = 1 + dtparams.iLeftMargin + dtparams.iRightMargin;
+
+        if (proposedSize.Width <= minWidth)
+        {
+            proposedSize.Width = minWidth;
+        }
+
+        if (proposedSize.Height <= 0)
+        {
+            proposedSize.Height = 1;
+        }
+
+        RECT rect = new(proposedSize);
+
+        using SelectObjectScope fontSelection = new(hdc, font.Object);
+
+        if (proposedSize.Height == int.MaxValue && dt.HasFlag(DRAW_TEXT_FORMAT.DT_SINGLELINE))
+        {
+            dt &= ~(DRAW_TEXT_FORMAT.DT_BOTTOM | DRAW_TEXT_FORMAT.DT_VCENTER);
+        }
+
+        if (proposedSize.Width == int.MaxValue)
+        {
+            dt &= ~(DRAW_TEXT_FORMAT.DT_WORDBREAK);
+        }
+
+        dt |= DRAW_TEXT_FORMAT.DT_CALCRECT;
+        PInvoke.DrawTextEx(hdc, text, textLength, &rect, dt, &dtparams);
 
         return rect.Size;
     }
