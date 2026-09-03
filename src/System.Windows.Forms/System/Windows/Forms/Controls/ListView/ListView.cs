@@ -47,6 +47,7 @@ public partial class ListView : Control
     private static readonly object s_rightToLeftLayoutChangedEvent = new();
     private static readonly object s_groupCollapsedStateChangedEvent = new();
     private static readonly object s_groupTaskLinkClickEvent = new();
+    private static readonly object s_columnDropDownClickedEvent = new();
 
     private ItemActivation _activation = ItemActivation.Standard;
     private ListViewAlignment _alignStyle = ListViewAlignment.Top;
@@ -1979,6 +1980,13 @@ public partial class ListView : Control
     {
         add => _onColumnClick += value;
         remove => _onColumnClick -= value;
+    }
+
+    [SRCategory(nameof(SR.CatAction))]
+    public event EventHandler<ColumnDropDownClickEventArgs>? ColumnDropDownClicked
+    {
+        add => Events.AddHandler(s_columnDropDownClickedEvent, value);
+        remove => Events.RemoveHandler(s_columnDropDownClickedEvent, value);
     }
 
     /// <summary>
@@ -3916,6 +3924,12 @@ public partial class ListView : Control
             mask = LVCOLUMNW_MASK.LVCF_FMT | LVCOLUMNW_MASK.LVCF_TEXT | LVCOLUMNW_MASK.LVCF_WIDTH
         };
 
+        if (ch.MinimumWidth > 0)
+        {
+            lvColumn.mask |= LVCOLUMNW_MASK.LVCF_MINWIDTH;
+            lvColumn.cxMin = ch.MinimumWidth;
+        }
+
         if (ch.OwnerListview is not null && ch.ActualImageIndex_Internal != -1)
         {
             lvColumn.mask |= LVCOLUMNW_MASK.LVCF_IMAGE;
@@ -3923,6 +3937,17 @@ public partial class ListView : Control
         }
 
         lvColumn.fmt = (LVCOLUMNW_FORMAT)ch.TextAlign;
+
+        if (ch.FixedWidth)
+        {
+            lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH;
+        }
+
+        if (ch.SplitButton)
+        {
+            lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+        }
+
         lvColumn.cx = ch.Width;
 
         fixed (char* columnHeaderText = ch.Text)
@@ -4442,6 +4467,15 @@ public partial class ListView : Control
     protected virtual void OnColumnClick(ColumnClickEventArgs e)
     {
         _onColumnClick?.Invoke(this, e);
+    }
+
+    /// <summary>
+    ///  Fires the column header drop-down clicked event.
+    /// </summary>
+    /// <param name="e">A <see cref="ColumnDropDownClickEventArgs"/> that contains the event data.</param>
+    protected void OnColumnDropDownClicked(ColumnDropDownClickEventArgs e)
+    {
+        ((EventHandler<ColumnDropDownClickEventArgs>?)Events[s_columnDropDownClickedEvent])?.Invoke(this, e);
     }
 
     /// <summary>
@@ -5257,7 +5291,7 @@ public partial class ListView : Control
             return;
         }
 
-        Debug.Assert((mask & ~(LVCOLUMNW_MASK.LVCF_FMT | LVCOLUMNW_MASK.LVCF_TEXT | LVCOLUMNW_MASK.LVCF_IMAGE)) == 0, "Unsupported mask in setColumnInfo");
+        Debug.Assert((mask & ~(LVCOLUMNW_MASK.LVCF_FMT | LVCOLUMNW_MASK.LVCF_TEXT | LVCOLUMNW_MASK.LVCF_IMAGE | LVCOLUMNW_MASK.LVCF_MINWIDTH)) == 0, "Unsupported mask in setColumnInfo");
         LVCOLUMNW lvColumn = new LVCOLUMNW
         {
             mask = mask
@@ -5269,6 +5303,17 @@ public partial class ListView : Control
             // This means that we have to include the TextAlign into the column format.
 
             lvColumn.mask |= LVCOLUMNW_MASK.LVCF_FMT;
+            lvColumn.fmt |= (LVCOLUMNW_FORMAT)ch.TextAlign;
+
+            if (ch.FixedWidth)
+            {
+                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH;
+            }
+
+            if (ch.SplitButton)
+            {
+                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+            }
 
             if (ch.ActualImageIndex_Internal > -1)
             {
@@ -5277,8 +5322,26 @@ public partial class ListView : Control
                 lvColumn.iImage = ch.ActualImageIndex_Internal;
                 lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_IMAGE;
             }
-
+        }
+        else if (ch.FixedWidth || ch.SplitButton)
+        {
+            lvColumn.mask |= LVCOLUMNW_MASK.LVCF_FMT;
             lvColumn.fmt |= (LVCOLUMNW_FORMAT)ch.TextAlign;
+
+            if (ch.FixedWidth)
+            {
+                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH;
+            }
+
+            if (ch.SplitButton)
+            {
+                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+            }
+        }
+
+        if ((mask & LVCOLUMNW_MASK.LVCF_MINWIDTH) != 0)
+        {
+            lvColumn.cxMin = ch.MinimumWidth;
         }
 
         IntPtr result;
@@ -5354,6 +5417,11 @@ public partial class ListView : Control
 
         if (IsHandleCreated)
         {
+            if (headerAutoResize == ColumnHeaderAutoResizeStyle.None && columnHeader.MinimumWidth > 0)
+            {
+                width = Math.Max(width, columnHeader.MinimumWidth);
+            }
+
             PInvokeCore.SendMessage(this, PInvoke.LVM_SETCOLUMNWIDTH, (WPARAM)columnIndex, LPARAM.MAKELPARAM(width, 0));
         }
 
@@ -5377,7 +5445,32 @@ public partial class ListView : Control
     {
         if (IsHandleCreated)
         {
+            if (_columnHeaders is not null && (uint)index < (uint)_columnHeaders.Length)
+            {
+                width = Math.Max(width, _columnHeaders[index].MinimumWidth);
+            }
+
             PInvokeCore.SendMessage(this, PInvoke.LVM_SETCOLUMNWIDTH, (WPARAM)index, LPARAM.MAKELPARAM(width, 0));
+        }
+    }
+
+    private void EnforceColumnMinimumWidth(int columnIndex)
+    {
+        if (!IsHandleCreated || _columnHeaders is null || (uint)columnIndex >= (uint)_columnHeaders.Length)
+        {
+            return;
+        }
+
+        int minimumWidth = _columnHeaders[columnIndex].MinimumWidth;
+        if (minimumWidth <= 0)
+        {
+            return;
+        }
+
+        int width = (int)PInvokeCore.SendMessage(this, PInvoke.LVM_GETCOLUMNWIDTH, (WPARAM)columnIndex);
+        if (width < minimumWidth)
+        {
+            SetColumnWidth(columnIndex, minimumWidth);
         }
     }
 
@@ -6144,12 +6237,20 @@ public partial class ListView : Control
                 (_listViewState[LISTVIEWSTATE_headerControlTracking] || _listViewState[LISTVIEWSTATE_headerDividerDblClick]))
             {
                 int newColumnWidth = ((nmheader->pitem->mask & HDI_MASK.HDI_WIDTH) != 0) ? nmheader->pitem->cxy : -1;
+                int minimumWidth = _columnHeaders[nmheader->iItem].MinimumWidth;
+                bool belowMinimumWidth = minimumWidth > 0 && newColumnWidth >= 0 && newColumnWidth < minimumWidth;
+                if (belowMinimumWidth)
+                {
+                    newColumnWidth = minimumWidth;
+                    nmheader->pitem->cxy = minimumWidth;
+                }
+
                 ColumnWidthChangingEventArgs colWidthChanging = new(nmheader->iItem, newColumnWidth);
                 OnColumnWidthChanging(colWidthChanging);
                 m.ResultInternal = (LRESULT)(colWidthChanging.Cancel ? 1 : 0);
                 if (colWidthChanging.Cancel)
                 {
-                    nmheader->pitem->cxy = colWidthChanging.NewWidth;
+                    nmheader->pitem->cxy = Math.Max(colWidthChanging.NewWidth, minimumWidth);
 
                     // We are called inside HDN_DIVIDERDBLCLICK.
                     // Turn off the compensation that our processing of HDN_DIVIDERDBLCLICK would otherwise add.
@@ -6159,9 +6260,15 @@ public partial class ListView : Control
                     }
 
                     _listViewState1[LISTVIEWSTATE1_cancelledColumnWidthChanging] = true;
-                    _newWidthForColumnWidthChangingCancelled = colWidthChanging.NewWidth;
+                    _newWidthForColumnWidthChangingCancelled = nmheader->pitem->cxy;
 
                     // skip default processing
+                    return true;
+                }
+                else if (belowMinimumWidth)
+                {
+                    SetColumnWidth(nmheader->iItem, minimumWidth);
+                    m.ResultInternal = (LRESULT)1;
                     return true;
                 }
                 else
@@ -6171,12 +6278,43 @@ public partial class ListView : Control
             }
         }
 
+        if (nmhdr->code == PInvoke.HDN_DROPDOWN)
+        {
+            NMHEADERW* nmheader = (NMHEADERW*)(nint)m.LParamInternal;
+            if (_columnHeaders is not null && (uint)nmheader->iItem < (uint)_columnHeaders.Length)
+            {
+                int columnIndex = nmheader->iItem;
+                Point screenLocation = Cursor.Position;
+                RECT dropDownRect = default;
+                HWND hwndHeader = (HWND)PInvokeCore.SendMessage(this, PInvoke.LVM_GETHEADER);
+
+                if (!hwndHeader.IsNull
+                    && PInvokeCore.SendMessage(
+                        hwndHeader,
+                        PInvoke.HDM_GETITEMDROPDOWNRECT,
+                        (WPARAM)columnIndex,
+                        ref dropDownRect) != IntPtr.Zero)
+                {
+                    Point dropDownLocation = new(dropDownRect.left, dropDownRect.bottom);
+                    if (PInvoke.ClientToScreen(hwndHeader, ref dropDownLocation))
+                    {
+                        screenLocation = dropDownLocation;
+                    }
+                }
+
+                OnColumnDropDownClicked(new ColumnDropDownClickEventArgs(columnIndex, screenLocation));
+                m.ResultInternal = (LRESULT)0;
+                return true;
+            }
+        }
+
         if ((nmhdr->code == PInvoke.HDN_ITEMCHANGEDW) &&
             !_listViewState[LISTVIEWSTATE_headerControlTracking])
         {
             NMHEADERW* nmheader = (NMHEADERW*)(nint)m.LParamInternal;
             if (_columnHeaders is not null && nmheader->iItem < _columnHeaders.Length)
             {
+                EnforceColumnMinimumWidth(nmheader->iItem);
                 int w = _columnHeaders[nmheader->iItem].Width;
 
                 if (_columnHeaderClicked is null ||
@@ -6247,6 +6385,8 @@ public partial class ListView : Control
             }
             else
             {
+                NMHEADERW* nmheader = (NMHEADERW*)(nint)m.LParamInternal;
+                EnforceColumnMinimumWidth(nmheader->iItem);
                 return false;
             }
         }

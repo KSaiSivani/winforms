@@ -6019,6 +6019,29 @@ public class ListViewTests
     }
 
     [WinFormsFact]
+    public void ListView_ColumnDropDownClicked_AddRemoveHandler_RaisesExpected()
+    {
+        using SubListView listView = new();
+        ColumnDropDownClickEventArgs expected = new(1, new Point(10, 20));
+        int callCount = 0;
+
+        EventHandler<ColumnDropDownClickEventArgs> handler = (sender, e) =>
+        {
+            sender.Should().BeSameAs(listView);
+            e.Should().BeSameAs(expected);
+            callCount++;
+        };
+
+        listView.ColumnDropDownClicked += handler;
+        listView.TestAccessor.Dynamic.OnColumnDropDownClicked(expected);
+        callCount.Should().Be(1);
+
+        listView.ColumnDropDownClicked -= handler;
+        listView.TestAccessor.Dynamic.OnColumnDropDownClicked(expected);
+        callCount.Should().Be(1);
+    }
+
+    [WinFormsFact]
     public void ListView_GroupTaskLinkClick_EventHandling_ShouldBehaveAsExpected()
     {
         using SubListView listView = new();

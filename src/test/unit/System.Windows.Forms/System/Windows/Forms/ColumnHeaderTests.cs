@@ -25,13 +25,61 @@ public class ColumnHeaderTests
         Assert.Equal(string.Empty, header.ImageKey);
         Assert.Null(header.ImageList);
         Assert.Equal(-1, header.Index);
+        Assert.False(header.FixedWidth);
         Assert.Null(header.ListView);
+        Assert.Equal(0, header.MinimumWidth);
         Assert.Empty(header.Name);
         Assert.Null(header.Site);
         Assert.Null(header.Tag);
         Assert.Equal("ColumnHeader", header.Text);
         Assert.Equal(HorizontalAlignment.Left, header.TextAlign);
+        Assert.False(header.SplitButton);
         Assert.Equal(60, header.Width);
+    }
+
+    [WinFormsTheory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(100)]
+    public void ColumnHeader_MinimumWidth_Set_GetReturnsExpected(int value)
+    {
+        using ColumnHeader header = new();
+
+        header.MinimumWidth = value;
+
+        Assert.Equal(value, header.MinimumWidth);
+    }
+
+    [WinFormsFact]
+    public void ColumnHeader_MinimumWidth_SetNegative_ThrowsArgumentOutOfRangeException()
+    {
+        using ColumnHeader header = new();
+
+        Assert.Throws<ArgumentOutOfRangeException>("value", () => header.MinimumWidth = -1);
+    }
+
+    [WinFormsTheory]
+    [BoolData]
+    public void ColumnHeader_ColumnStyles_SetWithHandle_UpdatesNativeColumn(bool value)
+    {
+        using ListView listView = new();
+        using ColumnHeader header = new();
+        listView.Columns.Add(header);
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+
+        header.MinimumWidth = value ? 40 : 0;
+        header.FixedWidth = value;
+        header.SplitButton = value;
+
+        LVCOLUMNW column = new()
+        {
+            mask = LVCOLUMNW_MASK.LVCF_MINWIDTH | LVCOLUMNW_MASK.LVCF_FMT
+        };
+
+        Assert.Equal(1, (int)PInvokeCore.SendMessage(listView, PInvoke.LVM_GETCOLUMNW, 0, ref column));
+        Assert.Equal(value ? 40 : 0, column.cxMin);
+        Assert.Equal(value, (column.fmt & LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH) != 0);
+        Assert.Equal(value, (column.fmt & LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON) != 0);
     }
 
     [WinFormsTheory]
@@ -1464,11 +1512,14 @@ public class ColumnHeaderTests
             DisplayIndex = 1,
             ImageKey = "imageKey",
             ImageIndex = 1,
+            FixedWidth = true,
+            MinimumWidth = 5,
             Name = "name",
             Site = mockSite.Object,
             Tag = "tag",
             Text = "text",
             TextAlign = HorizontalAlignment.Center,
+            SplitButton = true,
             Width = 10
         };
         using ColumnHeader header = Assert.IsType<ColumnHeader>(source.Clone());
@@ -1476,15 +1527,18 @@ public class ColumnHeaderTests
         Assert.Null(header.Container);
         Assert.Equal(-1, header.DisplayIndex);
         Assert.Equal(-1, header.ImageIndex);
+        Assert.True(header.FixedWidth);
         Assert.Equal(string.Empty, header.ImageKey);
         Assert.Null(header.ImageList);
         Assert.Equal(-1, header.Index);
         Assert.Null(header.ListView);
+        Assert.Equal(5, header.MinimumWidth);
         Assert.Empty(header.Name);
         Assert.Null(header.Site);
         Assert.Null(header.Tag);
         Assert.Equal("text", header.Text);
         Assert.Equal(HorizontalAlignment.Center, header.TextAlign);
+        Assert.True(header.SplitButton);
         Assert.Equal(10, header.Width);
     }
 

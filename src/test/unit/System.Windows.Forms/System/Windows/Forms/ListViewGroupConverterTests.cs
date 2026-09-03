@@ -271,6 +271,19 @@ public class ListViewGroupConverterTests
         ListViewItem item2 = new();
         listViewWithGroups.Items.Add(item2);
         yield return new object[] { item2, new object[] { group, null } };
+
+        ListViewItem item3 = new();
+        listViewWithGroups.Items.Add(item3);
+        yield return new object[] { new object[] { item2, item3 }, new object[] { group, null } };
+
+        ListView otherListView = new();
+        ListViewItem otherItem = new();
+        otherListView.Items.Add(otherItem);
+        yield return new object[] { new object[] { item2, otherItem }, null };
+
+        yield return new object[] { Array.Empty<object>(), null };
+        yield return new object[] { new object[] { item2, new ListViewItem() }, null };
+        yield return new object[] { new object[] { item2, new object() }, null };
     }
 
     [Theory]
