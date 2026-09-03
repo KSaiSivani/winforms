@@ -157,6 +157,7 @@ public partial class Form : ContainerControl
     private MdiClient? _ctlClient;
     private NativeWindow? _ownerWindow;
     private bool _rightToLeftLayout;
+    private bool _layoutSuspendedForMinimize;
 
     private Rectangle _restoreBounds = new(-1, -1, -1, -1);
     private CloseReason _closeReason = CloseReason.None;
@@ -5091,10 +5092,9 @@ public partial class Form : ContainerControl
     /// </summary>
     private void ResumeLayoutFromMinimize()
     {
-        // If we're currently minimized, resume our layout because we are
-        // about to snap out of it.
-        if (_formState[s_formStateWindowState] == (int)FormWindowState.Minimized)
+        if (_layoutSuspendedForMinimize)
         {
+            _layoutSuspendedForMinimize = false;
             ResumeLayout();
         }
     }
@@ -6036,10 +6036,9 @@ public partial class Form : ContainerControl
     /// </summary>
     private void SuspendLayoutForMinimize()
     {
-        // If we're not currently minimized, suspend our layout because we are
-        // about to become minimized
-        if (_formState[s_formStateWindowState] != (int)FormWindowState.Minimized)
+        if (!_layoutSuspendedForMinimize)
         {
+            _layoutSuspendedForMinimize = true;
             SuspendLayout();
         }
     }
@@ -6604,12 +6603,6 @@ public partial class Form : ContainerControl
             _restoreBounds.Location = Location;
         }
 
-        // If we just became normal or maximized resume
-        if (oldState == FormWindowState.Minimized && WindowState != FormWindowState.Minimized)
-        {
-            ResumeLayoutFromMinimize();
-        }
-
         switch (WindowState)
         {
             case FormWindowState.Normal:
@@ -7154,6 +7147,11 @@ public partial class Form : ContainerControl
         // We must update the windowState, because resize is fired from here (in Control).
         UpdateWindowState();
         base.WndProc(ref m);
+
+        if (WindowState != FormWindowState.Minimized)
+        {
+            ResumeLayoutFromMinimize();
+        }
 
         RestoreWindowBoundsIfNecessary();
     }

@@ -1034,6 +1034,68 @@ public partial class FormTests
     }
 
     [WinFormsFact]
+    public void Form_WindowState_Minimize_DoesNotResizeDockedChildControl()
+    {
+        using Form form = new() { ClientSize = new Size(300, 200) };
+        using Control child = new() { Dock = DockStyle.Fill };
+        form.Controls.Add(child);
+        form.Show();
+
+        Rectangle expectedBounds = child.Bounds;
+        Assert.NotEqual(Size.Empty, expectedBounds.Size);
+
+        form.WindowState = FormWindowState.Minimized;
+        Assert.Equal(expectedBounds, child.Bounds);
+
+        form.WindowState = FormWindowState.Normal;
+        Assert.Equal(expectedBounds, child.Bounds);
+    }
+
+    [WinFormsFact]
+    public void Form_WindowState_Minimize_DoesNotResizeAnchoredChildControl()
+    {
+        using Form form = new() { ClientSize = new Size(300, 200) };
+        using RichTextBox child = new()
+        {
+            Location = new Point(10, 10),
+            Size = new Size(280, 180),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
+            Text = "first line\nsecond line"
+        };
+        form.Controls.Add(child);
+        form.Show();
+
+        Rectangle expectedBounds = child.Bounds;
+
+        form.WindowState = FormWindowState.Minimized;
+        Assert.Equal(expectedBounds, child.Bounds);
+
+        child.Select(0, child.Text.IndexOf('\n') + 1);
+        child.SelectedRtf = "{\\rtf1\\ansi}";
+
+        form.WindowState = FormWindowState.Normal;
+        Assert.Equal(expectedBounds, child.Bounds);
+    }
+
+    [WinFormsFact]
+    public void Form_WindowState_MinimizeRestoreCycle_LayoutResumesCorrectly()
+    {
+        using Form form = new() { ClientSize = new Size(300, 200) };
+        using Control child = new() { Dock = DockStyle.Fill };
+        form.Controls.Add(child);
+        form.Show();
+
+        for (int i = 0; i < 3; i++)
+        {
+            form.WindowState = FormWindowState.Minimized;
+            form.WindowState = FormWindowState.Normal;
+        }
+
+        form.ClientSize = new Size(400, 250);
+        Assert.Equal(form.ClientSize, child.Size);
+    }
+
+    [WinFormsFact]
     public void Form_FormScreenCaptureMode_ThrowIfFormIsNotTopLevel()
     {
         if (!OsVersion.IsWindows11_OrGreater())

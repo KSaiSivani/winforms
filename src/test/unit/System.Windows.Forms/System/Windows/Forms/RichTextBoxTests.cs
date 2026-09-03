@@ -8968,6 +8968,45 @@ public partial class RichTextBoxTests
         }
     }
 
+    [WinFormsFact]
+    public void RichTextBox_MinimizedFormTextRemoval_LinePositionsRemainConsistentAfterRestore()
+    {
+        using Form form = new() { ClientSize = new Size(400, 300) };
+        using RichTextBox control = new()
+        {
+            Dock = DockStyle.Fill,
+            WordWrap = false
+        };
+        form.Controls.Add(control);
+        form.Show();
+
+        for (int i = 0; i < 5; i++)
+        {
+            control.AppendText($"line {i}: some sample text of varying length {new string('x', i * 3)}\n");
+        }
+
+        form.WindowState = FormWindowState.Minimized;
+
+        // Remove the first line while the form is minimized and its docked child would
+        // previously have been collapsed to a 0x0 client size and back.
+        int firstLineLength = control.Text.IndexOf('\n') + 1;
+        control.Select(0, firstLineLength);
+        control.SelectedRtf = "{\\rtf1\\ansi}";
+        form.WindowState = FormWindowState.Normal;
+        form.WindowState = FormWindowState.Normal;
+
+        string text = control.Text;
+        int lineCount = control.GetLineFromCharIndex(text.Length) + 1;
+        for (int line = 0; line < lineCount; line++)
+        {
+            int charIndex = control.GetFirstCharIndexFromLine(line);
+            Assert.InRange(charIndex, 0, text.Length);
+            Assert.True(
+                charIndex == 0 || text[charIndex - 1] == '\n',
+                $"Line {line} starts at index {charIndex}, which is not a line boundary in '{text}'.");
+        }
+    }
+
     [WinFormsTheory]
     [InlineData(ControlStyles.ContainerControl, false)]
     [InlineData(ControlStyles.UserPaint, false)]
