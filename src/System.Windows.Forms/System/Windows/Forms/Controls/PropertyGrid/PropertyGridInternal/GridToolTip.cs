@@ -109,6 +109,15 @@ internal class GridToolTip : Control
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        
+        if (!SystemInformation.HighContrast && Application.IsDarkModeEnabled)
+        {
+            PInvoke.SetWindowTheme(
+                HWND,
+                $"{Control.DarkModeIdentifier}_{Control.ExplorerThemeIdentifier}",
+                null);
+        }
+
         for (int i = 0; i < _controls.Length; i++)
         {
             if (_controls[i].IsHandleCreated)
