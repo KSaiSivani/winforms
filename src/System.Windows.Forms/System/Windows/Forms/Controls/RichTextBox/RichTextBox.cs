@@ -60,7 +60,7 @@ public partial class RichTextBox : TextBoxBase
     private string? _textPlain;
     private Color _selectionBackColorToSetOnHandleCreated;
     private RichTextBoxLanguageOptions _languageOption = RichTextBoxLanguageOptions.AutoFont | RichTextBoxLanguageOptions.DualFont;
-
+    private bool _wasSizedToZero;
     // Non-persistent state
     //
     private static int s_logPixelsX;
@@ -2699,6 +2699,27 @@ public partial class RichTextBox : TextBoxBase
         return base.ProcessCmdKey(ref m, keyData);
     }
 
+    private void RefreshRichEditLineCache(int width, int height)
+    {
+        if (width <= 0 || height <= 0 || !IsHandleCreated)
+        {
+            return;
+        }
+
+        // wParam 0 == SIZE_RESTORED, matching what a genuine, non-minimized resize sends.
+        PInvokeCore.SendMessage(
+            this,
+            PInvokeCore.WM_SIZE,
+            (WPARAM)0u,
+            PARAM.FromLowHigh(width + 1, height));
+
+        PInvokeCore.SendMessage(
+            this,
+            PInvokeCore.WM_SIZE,
+            (WPARAM)0u,
+            PARAM.FromLowHigh(width, height));
+    }
+
     /// <summary>
     ///  Redoes the last undone editing operation.
     /// </summary>
@@ -3667,6 +3688,23 @@ public partial class RichTextBox : TextBoxBase
                     else if (loWord == SCROLLBAR_COMMAND.SB_THUMBPOSITION)
                     {
                         OnHScroll(EventArgs.Empty);
+                    }
+
+                    break;
+                }
+
+            case PInvokeCore.WM_SIZE:
+                {
+                    int width = m.LParamInternal.LOWORD;
+                    int height = m.LParamInternal.HIWORD;
+                    bool wasSizedToZero = _wasSizedToZero;
+                    _wasSizedToZero = width == 0 || height == 0;
+
+                    base.WndProc(ref m);
+
+                    if (wasSizedToZero && !_wasSizedToZero)
+                    {
+                        RefreshRichEditLineCache(width, height);
                     }
 
                     break;
