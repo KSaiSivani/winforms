@@ -2,6 +2,10 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Drawing.Imaging;
+using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
+using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using System.Text;
 using Windows.Win32;
@@ -664,6 +668,40 @@ public class ImageTests
         using Bitmap bitmap = new(1, 1);
         string badTarget = Path.Join("NoSuchDirectory", "NoSuchFile");
         AssertExtensions.Throws<DirectoryNotFoundException>(() => bitmap.Save(badTarget), $"The directory NoSuchDirectory of the filename {badTarget} does not exist.");
+    }
+
+    [Fact]
+    public void CoreImageExtensions_Save_KeepsImageAlive()
+    {
+        MethodInfo save = typeof(CoreImageExtensions)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Single(method => method.Name == nameof(CoreImageExtensions.Save)
+                && method.GetParameters().Length == 5);
+
+        using FileStream assembly = File.OpenRead(save.Module.Assembly.Location);
+        using PEReader peReader = new(assembly);
+        MetadataReader metadata = peReader.GetMetadataReader();
+        MemberReferenceHandle keepAlive = metadata.MemberReferences.Single(handle =>
+        {
+            MemberReference member = metadata.GetMemberReference(handle);
+            if (metadata.GetString(member.Name) != nameof(GC.KeepAlive)
+                || member.Parent.Kind != HandleKind.TypeReference)
+            {
+                return false;
+            }
+
+            TypeReference type = metadata.GetTypeReference((TypeReferenceHandle)member.Parent);
+            return metadata.GetString(type.Namespace) == typeof(GC).Namespace
+                && metadata.GetString(type.Name) == nameof(GC);
+        });
+
+        MethodDefinitionHandle saveHandle =
+            MetadataTokens.MethodDefinitionHandle(save.MetadataToken & 0x00FFFFFF);
+        MethodDefinition saveDefinition = metadata.GetMethodDefinition(saveHandle);
+        byte[] il = peReader.GetMethodBody(saveDefinition.RelativeVirtualAddress).GetILBytes().ToArray();
+        byte[] keepImageAlive = [0x02, 0x28, .. BitConverter.GetBytes(MetadataTokens.GetToken(keepAlive))];
+
+        Assert.NotEqual(-1, il.AsSpan().IndexOf(keepImageAlive));
     }
 
     [Fact]

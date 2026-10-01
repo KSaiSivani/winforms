@@ -26,6 +26,7 @@ internal static unsafe class CoreImageExtensions
 
         using var iStream = stream.ToIStream();
         PInvokeGdiPlus.GdipSaveImageToStream(image.GetPointer(), iStream, &encoder, encoderParameters).ThrowIfFailed();
+        GC.KeepAlive(image);
     }
 
     internal static void Save(this IImage image, MemoryStream stream)
