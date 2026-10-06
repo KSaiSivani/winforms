@@ -1735,6 +1735,9 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         private readonly Color _dropDownMouseOverColor;
         private readonly Color _dropDownMouseDownColor;
         private readonly Color _toolStripBorderColor;
+        private readonly Color _labelBorderColor;
+        private readonly Color _labelForeColor;
+        private readonly bool _isDarkMode;
         private readonly ToolStripTemplateNode _owner;
         private Rectangle _hotRegion = Rectangle.Empty;
 
@@ -1742,11 +1745,27 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         {
             // Add Colors
             _owner = owner;
+            _isDarkMode = Application.IsDarkModeEnabled;
             _selectedBorderColor = Color.FromArgb(46, 106, 197);
-            _defaultBorderColor = Color.FromArgb(171, 171, 171);
-            _dropDownMouseOverColor = Color.FromArgb(193, 210, 238);
-            _dropDownMouseDownColor = Color.FromArgb(152, 181, 226);
-            _toolStripBorderColor = Color.White;
+
+            if (_isDarkMode)
+            {
+                _defaultBorderColor = Color.FromArgb(140, 140, 140);
+                _dropDownMouseOverColor = Color.FromArgb(70, 70, 70);
+                _dropDownMouseDownColor = Color.FromArgb(90, 90, 90);
+                _toolStripBorderColor = Color.FromArgb(32, 32, 32);
+                _labelBorderColor = Color.FromArgb(200, 200, 200);
+                _labelForeColor = Color.FromArgb(240, 240, 240);
+            }
+            else
+            {
+                _defaultBorderColor = Color.FromArgb(171, 171, 171);
+                _dropDownMouseOverColor = Color.FromArgb(193, 210, 238);
+                _dropDownMouseDownColor = Color.FromArgb(152, 181, 226);
+                _toolStripBorderColor = Color.White;
+                _labelBorderColor = Color.Black;
+                _labelForeColor = _defaultBorderColor;
+            }
         }
 
         /// <summary>
@@ -1761,22 +1780,22 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         /// <summary>
         ///  Custom method to draw DOWN arrow on the DropDown.
         /// </summary>
-        private void DrawArrow(Graphics g, Rectangle bounds)
+        private void DrawArrow(Graphics g, ToolStripItem item, Rectangle bounds)
         {
             bounds.Width--;
-            DrawArrow(new ToolStripArrowRenderEventArgs(g, null, bounds, SystemInformation.HighContrast ? Color.Black : SystemColors.ControlText, ArrowDirection.Down));
+            DrawArrow(new ToolStripArrowRenderEventArgs(g, item, bounds, SystemInformation.HighContrast ? Color.Black : SystemColors.ControlText, ArrowDirection.Down));
         }
 
         /// <summary>
         ///  Drawing different DropDown states.
         /// </summary>
-        private void DrawDropDown(Graphics g, Rectangle bounds, int state)
+        private void DrawDropDown(Graphics g, ToolStripItem item, Rectangle bounds, int state)
         {
             switch (state)
             {
                 case 1: // TemplateNodeSelected
                 case 4: // MouseOver
-                    using (LinearGradientBrush brush = new(bounds, Color.White, _defaultBorderColor, LinearGradientMode.Vertical))
+                    using (LinearGradientBrush brush = new(bounds, _toolStripBorderColor, _defaultBorderColor, LinearGradientMode.Vertical))
                     {
                         g.FillRectangle(brush, bounds);
                     }
@@ -1798,7 +1817,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
                     break;
             }
 
-            DrawArrow(g, bounds);
+            DrawArrow(g, item, bounds);
         }
 
         protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
@@ -1857,10 +1876,10 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
                 _owner.HotRegion = _hotRegion;
 
                 // do the Actual Drawing
-                DrawDropDown(g, _hotRegion, _state);
+                DrawDropDown(g, item, _hotRegion, _state);
 
-                borderPen.Color = Color.Black;
-                item.ForeColor = _defaultBorderColor;
+                borderPen.Color = _labelBorderColor;
+                item.ForeColor = _labelForeColor;
                 g.DrawRectangle(borderPen, drawRect);
             }
 
@@ -1878,8 +1897,8 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
                 _owner.HotRegion = _hotRegion;
 
                 g.Clear(_toolStripBorderColor);
-                DrawDropDown(g, _hotRegion, _state);
-                borderPen.Color = Color.Black;
+                DrawDropDown(g, item, _hotRegion, _state);
+                borderPen.Color = _labelBorderColor;
                 borderPen.DashStyle = DashStyle.Dot;
                 g.DrawRectangle(borderPen, drawRect);
             }
@@ -1887,19 +1906,19 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
             if (_state == (int)TemplateNodeSelectionState.MouseOverHotRegion)
             {
                 g.Clear(_toolStripBorderColor);
-                DrawDropDown(g, _hotRegion, _state);
-                borderPen.Color = Color.Black;
+                DrawDropDown(g, item, _hotRegion, _state);
+                borderPen.Color = _labelBorderColor;
                 borderPen.DashStyle = DashStyle.Dot;
-                item.ForeColor = _defaultBorderColor;
+                item.ForeColor = _labelForeColor;
                 g.DrawRectangle(borderPen, drawRect);
             }
 
             if (_state == (int)TemplateNodeSelectionState.HotRegionSelected)
             {
                 g.Clear(_toolStripBorderColor);
-                DrawDropDown(g, _hotRegion, _state);
-                borderPen.Color = Color.Black;
-                item.ForeColor = _defaultBorderColor;
+                DrawDropDown(g, item, _hotRegion, _state);
+                borderPen.Color = _labelBorderColor;
+                item.ForeColor = _labelForeColor;
                 g.DrawRectangle(borderPen, drawRect);
             }
 
@@ -1907,7 +1926,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
             {
                 g.Clear(_toolStripBorderColor);
                 g.DrawRectangle(borderPen, drawRect);
-                item.ForeColor = _defaultBorderColor;
+                item.ForeColor = _labelForeColor;
             }
 
             borderPen.Dispose();
@@ -1993,10 +2012,17 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
             ToolStripItem item = e.Item as ToolStripLabel;
-            if (item is not null && string.Equals(item.Name, CenterLabelName, StringComparison.InvariantCulture) && SystemInformation.HighContrast)
+            if (item is not null && string.Equals(item.Name, CenterLabelName, StringComparison.InvariantCulture))
             {
-                // "Type Here" node always has white background, text should be painted in black
-                e.TextColor = Color.Black;
+                if (SystemInformation.HighContrast)
+                {
+                    // "Type Here" node always has white background, text should be painted in black
+                    e.TextColor = Color.Black;
+                }
+                else if (_isDarkMode)
+                {
+                    e.TextColor = _labelForeColor;
+                }
             }
 
             base.OnRenderItemText(e);
