@@ -2651,7 +2651,7 @@ public partial class ListView : Control
                             Items[(int)nmcd->nmcd.dwItemSpec],
                             itemBounds,
                             (int)nmcd->nmcd.dwItemSpec,
-                            (ListViewItemStates)nmcd->nmcd.uItemState);
+                            GetOwnerDrawItemState(itemIndex, nmcd->nmcd.uItemState));
 
                         OnDrawItem(e);
 
@@ -2743,7 +2743,7 @@ public partial class ListView : Control
                                     itemIndex,
                                     nmcd->iSubItem,
                                     _columnHeaders![nmcd->iSubItem],
-                                    (ListViewItemStates)nmcd->nmcd.uItemState);
+                                    GetOwnerDrawItemState(itemIndex, nmcd->nmcd.uItemState));
                                 OnDrawSubItem(e);
 
                                 // the customer still wants to draw the default.
@@ -2935,6 +2935,20 @@ public partial class ListView : Control
             Debug.Fail("Exception occurred attempting to setup custom draw. Disabling custom draw for this control", e.ToString());
             m.ResultInternal = (LRESULT)(nint)PInvoke.CDRF_DODEFAULT;
         }
+    }
+
+    private ListViewItemStates GetOwnerDrawItemState(
+        int itemIndex,
+        NMCUSTOMDRAW_DRAW_STATE_FLAGS customDrawState)
+    {
+        if ((customDrawState & NMCUSTOMDRAW_DRAW_STATE_FLAGS.CDIS_SELECTED) != 0
+            && (GetItemState(itemIndex, LIST_VIEW_ITEM_STATE_FLAGS.LVIS_SELECTED)
+                & LIST_VIEW_ITEM_STATE_FLAGS.LVIS_SELECTED) == 0)
+        {
+            customDrawState &= ~NMCUSTOMDRAW_DRAW_STATE_FLAGS.CDIS_SELECTED;
+        }
+
+        return (ListViewItemStates)customDrawState;
     }
 
     private static void DeleteFileName(string? fileName)

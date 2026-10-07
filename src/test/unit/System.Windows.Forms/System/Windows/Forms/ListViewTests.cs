@@ -2841,6 +2841,106 @@ public class ListViewTests
     }
 
     [WinFormsTheory]
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    public void ListView_OwnerDraw_CustomDrawState_ReflectsActualSelection(
+        bool drawSubItem,
+        bool selected,
+        bool hideSelection)
+    {
+        using ListView listView = new()
+        {
+            View = drawSubItem ? View.Details : View.List,
+            OwnerDraw = true,
+            FullRowSelect = true,
+            HideSelection = hideSelection,
+            Size = new Size(300, 200)
+        };
+        listView.Columns.Add("First", 100);
+        listView.Columns.Add("Second", 100);
+        ListViewItem item = listView.Items.Add("Item");
+        item.SubItems.Add("Subitem");
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+
+        item.Selected = true;
+        item.Focused = true;
+        item.Selected = selected;
+        Assert.Equal(selected, item.Selected);
+        Assert.Equal(selected ? 1 : 0, listView.SelectedItems.Count);
+
+        ListViewItemStates notificationState =
+            ListViewItemStates.Selected | ListViewItemStates.Focused | ListViewItemStates.Hot;
+        ListViewItemStates expectedState = selected
+            ? notificationState
+            : notificationState & ~ListViewItemStates.Selected;
+        ListViewItemStates? actualState = null;
+        int drawCallCount = 0;
+        if (drawSubItem)
+        {
+            listView.DrawSubItem += (_, e) =>
+            {
+                Assert.Same(item, e.Item);
+                Assert.Same(item.SubItems[1], e.SubItem);
+                actualState = e.ItemState;
+                drawCallCount++;
+            };
+        }
+        else
+        {
+            listView.DrawItem += (_, e) =>
+            {
+                Assert.Same(item, e.Item);
+                actualState = e.State;
+                drawCallCount++;
+            };
+        }
+
+        using Bitmap bitmap = new(listView.Width, listView.Height);
+        using Graphics graphics = Graphics.FromImage(bitmap);
+        IntPtr hdc = graphics.GetHdc();
+        try
+        {
+            // Reproduce the stale Selected bit supplied by native custom draw after deselection.
+            NMLVCUSTOMDRAW notification = new()
+            {
+                nmcd = new NMCUSTOMDRAW
+                {
+                    hdr = new NMHDR
+                    {
+                        hwndFrom = (HWND)listView.Handle,
+                        code = PInvoke.NM_CUSTOMDRAW
+                    },
+                    hdc = (HDC)hdc,
+                    dwDrawStage = drawSubItem
+                        ? NMCUSTOMDRAW_DRAW_STAGE.CDDS_ITEMPREPAINT | NMCUSTOMDRAW_DRAW_STAGE.CDDS_SUBITEM
+                        : NMCUSTOMDRAW_DRAW_STAGE.CDDS_ITEMPREPAINT,
+                    dwItemSpec = 0,
+                    uItemState = (NMCUSTOMDRAW_DRAW_STATE_FLAGS)notificationState
+                },
+                iSubItem = drawSubItem ? 1 : 0
+            };
+            PInvokeCore.SendMessage(
+                listView,
+                (uint)MessageId.WM_REFLECT_NOTIFY,
+                (WPARAM)0,
+                ref notification);
+
+            Assert.Equal(1, drawCallCount);
+            Assert.Equal(expectedState, actualState);
+        }
+        finally
+        {
+            graphics.ReleaseHdc(hdc);
+        }
+    }
+
+    [WinFormsTheory]
     [BoolData]
     public void ListView_OwnerDraw_Set_GetReturnsExpected(bool value)
     {
@@ -6019,6 +6119,132 @@ public class ListViewTests
     }
 
     [WinFormsFact]
+    public void ListView_ColumnDropDownClicked_AddRemoveHandler_RaisesExpected()
+    {
+        using SubListView listView = new();
+        ColumnDropDownClickEventArgs expected = new(1, new Point(10, 20));
+        int callCount = 0;
+
+        EventHandler<ColumnDropDownClickEventArgs> handler = (sender, e) =>
+        {
+            sender.Should().BeSameAs(listView);
+            e.Should().BeSameAs(expected);
+            callCount++;
+        };
+
+        listView.ColumnDropDownClicked += handler;
+        listView.TestAccessor.Dynamic.OnColumnDropDownClicked(expected);
+        callCount.Should().Be(1);
+
+        listView.ColumnDropDownClicked -= handler;
+        listView.TestAccessor.Dynamic.OnColumnDropDownClicked(expected);
+        callCount.Should().Be(1);
+    }
+
+    [WinFormsFact]
+    public unsafe void ListView_WmReflectNotify_HdnDropDown_RaisesWithParentRelativeScreenLocation()
+    {
+        using Form form = new()
+        {
+            Location = new Point(100, 100),
+            StartPosition = FormStartPosition.Manual
+        };
+        using SubListView listView = new()
+        {
+            Bounds = new Rectangle(20, 30, 120, 100),
+            View = View.Details
+        };
+        form.Controls.Add(listView);
+        listView.Columns.Add(new ColumnHeader
+        {
+            SplitButton = true,
+            Width = 200
+        });
+        Assert.NotEqual(IntPtr.Zero, form.Handle);
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+
+        HWND headerHandle = (HWND)PInvokeCore.SendMessage(listView, PInvoke.LVM_GETHEADER);
+        Assert.False(headerHandle.IsNull);
+        RECT dropDownRectangle = default;
+        Assert.NotEqual(
+            IntPtr.Zero,
+            PInvokeCore.SendMessage(
+                headerHandle,
+                PInvoke.HDM_GETITEMDROPDOWNRECT,
+                (WPARAM)0,
+                ref dropDownRectangle));
+        Point expectedLocation = new(dropDownRectangle.left, dropDownRectangle.bottom);
+        Assert.True(PInvoke.ClientToScreen(listView, ref expectedLocation));
+
+        ColumnDropDownClickEventArgs eventArgs = null;
+        listView.ColumnDropDownClicked += (sender, e) => eventArgs = e;
+        NMHEADERW notification = new()
+        {
+            hdr = new NMHDR
+            {
+                hwndFrom = headerHandle,
+                code = PInvoke.HDN_DROPDOWN
+            },
+            iItem = 0
+        };
+        Message message = new()
+        {
+            HWnd = listView.Handle,
+            Msg = (int)MessageId.WM_REFLECT_NOTIFY,
+            LParam = (nint)(&notification)
+        };
+
+        listView.WndProc(ref message);
+
+        Assert.NotNull(eventArgs);
+        Assert.Equal(0, eventArgs.Column);
+        Assert.Equal(expectedLocation, eventArgs.ScreenLocation);
+    }
+
+    [WinFormsFact]
+    public unsafe void ListView_WmReflectNotify_HdnItemChanged_EnforcesMinimumWidth()
+    {
+        using SubListView listView = new()
+        {
+            View = View.Details
+        };
+        listView.Columns.Add(new ColumnHeader
+        {
+            MinimumWidth = 40,
+            Width = 80
+        });
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+
+        LVCOLUMNW column = new()
+        {
+            mask = LVCOLUMNW_MASK.LVCF_MINWIDTH,
+            cxMin = 0
+        };
+        Assert.Equal(1, (int)PInvokeCore.SendMessage(listView, PInvoke.LVM_SETCOLUMNW, 0, ref column));
+        PInvokeCore.SendMessage(listView, PInvoke.LVM_SETCOLUMNWIDTH, (WPARAM)0, LPARAM.MAKELPARAM(10, 0));
+        Assert.Equal(10, (int)PInvokeCore.SendMessage(listView, PInvoke.LVM_GETCOLUMNWIDTH, (WPARAM)0));
+
+        NMHEADERW notification = new()
+        {
+            hdr = new NMHDR
+            {
+                code = PInvoke.HDN_ITEMCHANGEDW
+            },
+            iItem = 0
+        };
+        Message message = new()
+        {
+            HWnd = listView.Handle,
+            Msg = (int)MessageId.WM_REFLECT_NOTIFY,
+            LParam = (nint)(&notification)
+        };
+
+        listView.WndProc(ref message);
+
+        Assert.Equal(40, (int)PInvokeCore.SendMessage(listView, PInvoke.LVM_GETCOLUMNWIDTH, (WPARAM)0));
+    }
+
+    [WinFormsFact]
     public void ListView_GroupTaskLinkClick_EventHandling_ShouldBehaveAsExpected()
     {
         using SubListView listView = new();
@@ -6171,6 +6397,8 @@ public class ListViewTests
         public new void OnCacheVirtualItems(CacheVirtualItemsEventArgs e) => base.OnCacheVirtualItems(e);
 
         public new void OnItemChecked(ItemCheckedEventArgs e) => base.OnItemChecked(e);
+
+        public new void WndProc(ref Message m) => base.WndProc(ref m);
     }
 
     private SubListView GetSubListViewWithData(View view, bool virtualMode, bool showGroups, bool withinGroup, bool createControl)
