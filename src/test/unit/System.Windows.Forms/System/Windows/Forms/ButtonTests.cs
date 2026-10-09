@@ -3674,6 +3674,61 @@ public class ButtonTests : AbstractButtonBaseTests
     [InlineData(0, 255, 0)]
     [InlineData(0, 0, 255)]
     public void Button_Flat_ProperColor(int red, int green, int blue) => ButtonBase_FlatStyle_ProperFlatButtonColor(red, green, blue);
+    
+    [WinFormsTheory]
+    [InlineData(75, 43, "button1\r\nbtn\r\nbtn", false, false)]
+    [InlineData(75, 43, "button1\r\nbtn\r\nbtn", true, false)]
+    [InlineData(75, 23, "button2", false, false)]
+    [InlineData(75, 23, "button2", true, false)]
+    [InlineData(75, 23, "this is button3", false, true)]
+    [InlineData(75, 23, "this is button3", true, true)]
+    public void Button_OnPaint_AutoEllipsis_ShowsToolTipOnlyForTruncatedText(
+        int width,
+        int height,
+        string text,
+        bool useCompatibleTextRendering,
+        bool expected)
+    {
+        using Font font = new("Microsoft Sans Serif", 8.25f);
+        using SubButton control = new()
+        {
+            AutoEllipsis = true,
+            Font = font,
+            Size = new(width, height),
+            Text = text,
+            UseCompatibleTextRendering = useCompatibleTextRendering
+        };
+        using Bitmap bitmap = new(width, height);
+        using Graphics graphics = Graphics.FromImage(bitmap);
+        using PaintEventArgs eventArgs = new(graphics, control.ClientRectangle);
+
+        control.OnPaint(eventArgs);
+
+        Assert.Equal(expected, control.ShowToolTip);
+    }
+
+    [WinFormsTheory]
+    [BoolData]
+    public void Button_OnPaint_AutoEllipsisWithImage_UsesTextBounds(bool useCompatibleTextRendering)
+    {
+        using Bitmap buttonImage = new(48, 16);
+        using SubButton control = new()
+        {
+            AutoEllipsis = true,
+            Image = buttonImage,
+            Size = new(100, 30),
+            Text = "This text fits",
+            TextImageRelation = TextImageRelation.ImageBeforeText,
+            UseCompatibleTextRendering = useCompatibleTextRendering
+        };
+        using Bitmap bitmap = new(control.Width, control.Height);
+        using Graphics graphics = Graphics.FromImage(bitmap);
+        using PaintEventArgs eventArgs = new(graphics, control.ClientRectangle);
+
+        control.OnPaint(eventArgs);
+
+        Assert.True(control.ShowToolTip);
+    }
 
     [Fact]
     public void Ctor_Default_CreatesInstance()

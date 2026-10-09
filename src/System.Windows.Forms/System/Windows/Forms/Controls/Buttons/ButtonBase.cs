@@ -1220,15 +1220,9 @@ public abstract partial class ButtonBase : Control, ICommandBindingTargetProvide
     /// </summary>
     protected override void OnPaint(PaintEventArgs pevent)
     {
-        if (AutoEllipsis)
-        {
-            Size preferredSize = PreferredSize;
-            ShowToolTip = (ClientRectangle.Width < preferredSize.Width || ClientRectangle.Height < preferredSize.Height);
-        }
-        else
-        {
-            ShowToolTip = false;
-        }
+        // Calculate the layout without ellipsis so truncation is based on the text that would otherwise be drawn.
+        ShowToolTip = false;
+        ShowToolTip = AutoEllipsis && Adapter.IsTextTruncated(pevent);
 
         if (GetStyle(ControlStyles.UserPaint))
         {

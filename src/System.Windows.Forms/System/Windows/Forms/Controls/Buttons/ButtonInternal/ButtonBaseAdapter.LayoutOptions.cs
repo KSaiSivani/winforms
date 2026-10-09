@@ -671,6 +671,49 @@ internal abstract partial class ButtonBaseAdapter
             layout.TextBounds.Height = bottom - layout.TextBounds.Y;
         }
 
+        internal bool IsTextTruncated(Rectangle textBounds)
+        {
+            if (string.IsNullOrEmpty(Text))
+            {
+                return false;
+            }
+
+            if (textBounds.Width <= 0 || textBounds.Height <= 0)
+            {
+                return true;
+            }
+
+            Size proposedSize = LayoutUtils.FlipSizeIf(VerticalText, textBounds.Size);
+            if (UseCompatibleTextRendering)
+            {
+                using var screen = GdiCache.GetScreenDCGraphics();
+                using StringFormat stringFormat = StringFormat;
+                screen.Graphics.MeasureString(
+                    Text,
+                    Font,
+                    proposedSize,
+                    stringFormat,
+                    out int charactersFitted,
+                    out _);
+
+                return charactersFitted < Text.Length;
+            }
+
+            proposedSize.Height = int.MaxValue;
+            Size textSize = TextRenderer.MeasureText(
+                Text,
+                Font,
+                proposedSize,
+                TextFormatFlags | TextFormatFlags.NoPadding);
+            textSize = LayoutUtils.FlipSizeIf(VerticalText, textSize);
+
+            // GDI includes external-leading space that is not required for the visible glyphs.
+            int verticalOverhang = Font.Height / 3;
+
+            return textSize.Width > textBounds.Width
+                || textSize.Height > textBounds.Height + verticalOverhang;
+        }
+
         protected virtual Size GetTextSize(Size proposedSize)
         {
             // Set the Prefix field of TextFormatFlags

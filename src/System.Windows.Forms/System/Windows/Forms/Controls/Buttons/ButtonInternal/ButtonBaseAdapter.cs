@@ -60,6 +60,12 @@ internal abstract partial class ButtonBaseAdapter
         return options.GetPreferredSizeCore(proposedSize);
     }
 
+    internal bool IsTextTruncated(PaintEventArgs e)
+    {
+        LayoutData layout = Layout(e).Layout();
+        return layout.Options.IsTextTruncated(layout.TextBounds);
+    }
+    
     protected static Size GetPopupPreferredSizeCore(LayoutOptions layout, Size proposedSize)
     {
         layout.GrowBorderBy1PxWhenDefault = false;
