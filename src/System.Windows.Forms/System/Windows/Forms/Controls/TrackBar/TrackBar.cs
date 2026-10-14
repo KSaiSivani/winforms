@@ -23,6 +23,8 @@ namespace System.Windows.Forms;
 [SRDescription(nameof(SR.DescriptionTrackBar))]
 public partial class TrackBar : Control, ISupportInitialize
 {
+    private const int TrackBarThumbCustomDrawItem = 2;
+
     private static readonly object s_scrollEvent = new();
     private static readonly object s_valueChangedEvent = new();
     private static readonly object s_rightToLeftChangedEvent = new();
@@ -1162,10 +1164,81 @@ public partial class TrackBar : Control, ISupportInitialize
 
     public override string ToString() => $"{base.ToString()}, Minimum: {Minimum}, Maximum: {Maximum}, Value: {_value}";
 
+    private unsafe bool WmReflectNotify(ref Message m)
+    {
+        if (!Application.IsDarkModeEnabled || DarkModeRequestState is not true || m.LParamInternal == 0)
+        {
+            return false;
+        }
+
+        NMHDR* header = (NMHDR*)(nint)m.LParamInternal;
+        if (header->code != PInvoke.NM_CUSTOMDRAW)
+        {
+            return false;
+        }
+
+        NMCUSTOMDRAW* customDraw = (NMCUSTOMDRAW*)header;
+        switch (customDraw->dwDrawStage)
+        {
+            case NMCUSTOMDRAW_DRAW_STAGE.CDDS_PREPAINT:
+                m.ResultInternal = (LRESULT)(nint)PInvoke.CDRF_NOTIFYITEMDRAW;
+                return true;
+
+            case NMCUSTOMDRAW_DRAW_STAGE.CDDS_ITEMPREPAINT:
+                m.ResultInternal = ShouldDrawThumbCue(customDraw)
+                    ? (LRESULT)(nint)PInvoke.CDRF_NOTIFYPOSTPAINT
+                    : (LRESULT)(nint)PInvoke.CDRF_DODEFAULT;
+                return true;
+
+            case NMCUSTOMDRAW_DRAW_STAGE.CDDS_ITEMPOSTPAINT:
+                if (ShouldDrawThumbCue(customDraw) && !customDraw->hdc.IsNull)
+                {
+                    Rectangle thumbBounds = customDraw->rc;
+                    if (thumbBounds.Width > 1 && thumbBounds.Height > 1)
+                    {
+                        using Graphics graphics = customDraw->hdc.CreateGraphics();
+                        ControlPaint.DrawHighContrastFocusRectangle(
+                            graphics,
+                            thumbBounds,
+                            SystemColors.HighlightText);
+                    }
+                }
+
+                m.ResultInternal = (LRESULT)(nint)PInvoke.CDRF_DODEFAULT;
+                return true;
+
+            default:
+                return false;
+        }
+
+        bool ShouldDrawThumbCue(NMCUSTOMDRAW* notification)
+        {
+            if (notification->dwItemSpec != TrackBarThumbCustomDrawItem)
+            {
+                return false;
+            }
+
+            NMCUSTOMDRAW_DRAW_STATE_FLAGS state = notification->uItemState;
+            bool isHot = (state & NMCUSTOMDRAW_DRAW_STATE_FLAGS.CDIS_HOT) != 0;
+            bool hasVisibleFocus = ShowFocusCues
+                && (Focused || (state & NMCUSTOMDRAW_DRAW_STATE_FLAGS.CDIS_FOCUS) != 0);
+
+            return isHot || hasVisibleFocus;
+        }
+    }
+
     protected override void WndProc(ref Message m)
     {
         switch (m.MsgInternal)
         {
+            case MessageId.WM_REFLECT_NOTIFY:
+                if (!WmReflectNotify(ref m))
+                {
+                    base.WndProc(ref m);
+                }
+
+                break;
+
             case MessageId.WM_REFLECT_HSCROLL:
             case MessageId.WM_REFLECT_VSCROLL:
                 switch ((uint)m.WParamInternal.LOWORD)
