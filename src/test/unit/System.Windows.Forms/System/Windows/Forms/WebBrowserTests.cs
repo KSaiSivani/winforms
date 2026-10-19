@@ -4518,6 +4518,146 @@ public class WebBrowserTests
         control.Stop();
     }
 
+    public static IEnumerable<object[]> WndProc_MouseActivation_TestData()
+    {
+        int[] messages =
+        [
+            (int)PInvokeCore.WM_LBUTTONDOWN,
+            (int)PInvokeCore.WM_MBUTTONDOWN,
+            (int)PInvokeCore.WM_RBUTTONDOWN,
+            (int)PInvokeCore.WM_MOUSEACTIVATE
+        ];
+
+        foreach (int message in messages)
+        {
+            foreach (bool component in new[] { false, true })
+            {
+                foreach (bool containsFocus in new[] { false, true })
+                {
+                    yield return [message, component, containsFocus];
+                }
+            }
+        }
+    }
+
+    [WinFormsTheory]
+    [MemberData(nameof(WndProc_MouseActivation_TestData))]
+    public void WebBrowser_WndProc_MouseActivation_FocusesOnlyWhenNeeded(int msg, bool component, bool containsFocus)
+    {
+        using Container components = new();
+        using Form form = new();
+        using SplitContainer splitContainer = new();
+        using FocusTrackingWebBrowser control = new();
+        using Button button = new();
+        if (component)
+        {
+            components.Add(control);
+        }
+
+        form.Controls.Add(splitContainer);
+        splitContainer.Panel1.Controls.Add(control);
+        splitContainer.Panel2.Controls.Add(button);
+        form.Show();
+
+        Assert.True(containsFocus ? control.Focus() : button.Focus());
+        Assert.Equal(containsFocus, control.ContainsFocus);
+        Assert.NotSame(control, form.ActiveControl);
+        control.ResetFocusCallCount();
+
+        Message message = new() { Msg = msg };
+        control.WndProc(ref message);
+
+        Assert.Equal(containsFocus ? 0 : 1, control.FocusCallCount);
+        Assert.True(control.ContainsFocus);
+    }
+
+    [WinFormsTheory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void WebBrowser_ContainingControl_Reparented_ReturnsCurrentContainer(bool reparentAncestor, bool createHandle)
+    {
+        using Form firstForm = new();
+        using Form secondForm = new();
+        using SplitContainer splitContainer = new();
+        using WebBrowser control = new() { Visible = false };
+        splitContainer.Panel1.Controls.Add(control);
+        if (createHandle)
+        {
+            Assert.NotEqual(IntPtr.Zero, control.Handle);
+        }
+
+        Assert.Same(splitContainer, control.ContainingControl);
+
+        firstForm.Controls.Add(splitContainer);
+        Assert.Same(firstForm, control.ContainingControl);
+
+        if (reparentAncestor)
+        {
+            secondForm.Controls.Add(splitContainer);
+        }
+        else
+        {
+            secondForm.Controls.Add(control);
+        }
+
+        Assert.Same(secondForm, control.ContainingControl);
+        control.Parent = null;
+        Assert.Null(control.ContainingControl);
+        Assert.Equal(createHandle, control.IsHandleCreated);
+    }
+
+    [WinFormsFact]
+    public async Task WebBrowser_WndProc_MouseActivation_PreservesDocumentFocusAndSelection()
+    {
+        using Container components = new();
+        using Form form = new();
+        using SplitContainer splitContainer = new() { Dock = DockStyle.Fill };
+        using FocusTrackingWebBrowser control = new() { Dock = DockStyle.Fill };
+        components.Add(control);
+        form.Controls.Add(splitContainer);
+        splitContainer.Panel1.Controls.Add(control);
+        form.Show();
+
+        TaskCompletionSource<bool> loaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        control.DocumentCompleted += (sender, e) => loaded.TrySetResult(true);
+        control.DocumentText = """
+            <html><body style="margin:0;font:16px monospace"><span id="text">Regression</span>
+            <script>
+            function selectText() {
+                document.body.focus();
+                var range = document.body.createTextRange();
+                range.moveToElementText(document.getElementById('text'));
+                range.select();
+            }
+            function selectedText() { return document.selection.createRange().text; }
+            </script></body></html>
+            """;
+        await loaded.Task.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+        control.Document.InvokeScript("selectText");
+        Assert.True(control.ContainsFocus);
+        Assert.True(PInvoke.IsChild(control, PInvoke.GetFocus()));
+        Assert.Equal("Regression", control.Document.InvokeScript("selectedText"));
+        HWND focusedWindow = PInvoke.GetFocus();
+        control.ResetFocusCallCount();
+
+        foreach (int msg in new[]
+        {
+            (int)PInvokeCore.WM_MOUSEACTIVATE,
+            (int)PInvokeCore.WM_LBUTTONDOWN,
+            (int)PInvokeCore.WM_MBUTTONDOWN,
+            (int)PInvokeCore.WM_RBUTTONDOWN
+        })
+        {
+            Message message = new() { Msg = msg };
+            control.WndProc(ref message);
+            Assert.Equal(0, control.FocusCallCount);
+            Assert.Equal(focusedWindow, PInvoke.GetFocus());
+            Assert.Equal("Regression", control.Document.InvokeScript("selectedText"));
+        }
+    }
+
     [WinFormsFact]
     public void WebBrowser_WndProc_InvokeMouseHoverWithHandle_Success()
     {
@@ -4818,6 +4958,22 @@ public class WebBrowserTests
         public new void OnStatusTextChanged(EventArgs e) => base.OnStatusTextChanged(e);
 
         public new void WndProc(ref Message m) => base.WndProc(ref m);
+    }
+
+    /// <summary>
+    ///  Tracks explicit focus requests without replacing native browser focus behavior.
+    /// </summary>
+    private class FocusTrackingWebBrowser : SubWebBrowser
+    {
+        public int FocusCallCount { get; private set; }
+
+        private protected override bool FocusInternal()
+        {
+            FocusCallCount++;
+            return base.FocusInternal();
+        }
+
+        public void ResetFocusCallCount() => FocusCallCount = 0;
     }
 
     [WinFormsFact]

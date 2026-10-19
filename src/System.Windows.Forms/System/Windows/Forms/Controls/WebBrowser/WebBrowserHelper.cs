@@ -28,7 +28,6 @@ internal static partial class WebBrowserHelper
     internal static readonly int s_inTransition = BitVector32.CreateMask(s_siteProcessedInputKey);
     internal static readonly int s_processingKeyUp = BitVector32.CreateMask(s_inTransition);
     internal static readonly int s_isMaskEdit = BitVector32.CreateMask(s_processingKeyUp);
-    internal static readonly int s_recomputeContainingControl = BitVector32.CreateMask(s_isMaskEdit);
 
     // Gets the LOGPIXELSX of the screen DC.
     private static int s_logPixelsX = -1;

@@ -37,7 +37,6 @@ public unsafe partial class WebBrowserBase : Control
     private BitVector32 _axHostState;
     private WebBrowserHelper.SelectionStyle _selectionStyle = WebBrowserHelper.SelectionStyle.NotSelected;
     private WebBrowserSiteBase? _axSite;
-    private ContainerControl? _containingControl;
     private EventHandler? _selectionChangeHandler;
     private readonly Guid _clsid;
     // Pointers to the ActiveX object: Interface pointers are cached for perf.
@@ -401,9 +400,10 @@ public unsafe partial class WebBrowserBase : Control
             case PInvokeCore.WM_MBUTTONDOWN:
             case PInvokeCore.WM_RBUTTONDOWN:
             case PInvokeCore.WM_MOUSEACTIVATE:
-                if (!DesignMode)
+                if (!DesignMode && !ContainsFocus)
                 {
-                    if (_containingControl is not null && _containingControl.ActiveControl != this)
+                    ContainerControl? containingControl = ContainingControl;
+                    if (containingControl is not null && containingControl.ActiveControl != this)
                     {
                         Focus();
                     }
@@ -687,19 +687,7 @@ public unsafe partial class WebBrowserBase : Control
     // behaviors of ActiveX controls.
     [Browsable(false)]
     [EditorBrowsable(EditorBrowsableState.Advanced)]
-    internal ContainerControl? ContainingControl
-    {
-        get
-        {
-            if (_containingControl is null ||
-                GetAXHostState(WebBrowserHelper.s_recomputeContainingControl))
-            {
-                _containingControl = FindContainerControlInternal();
-            }
-
-            return _containingControl;
-        }
-    }
+    internal ContainerControl? ContainingControl => FindContainerControlInternal();
 
     internal WebBrowserContainer CreateWebBrowserContainer() =>
         _wbContainer ??= new WebBrowserContainer(this);
@@ -1162,8 +1150,6 @@ public unsafe partial class WebBrowserBase : Control
         {
             containerControl = null;
         }
-
-        SetAXHostState(WebBrowserHelper.s_recomputeContainingControl, containerControl is null);
 
         return containerControl;
     }
