@@ -106,13 +106,37 @@ public unsafe class NativeToManagedAdapterTests
     public void GetData_RtfWithoutNullTerminator_ReturnsRtfText()
     {
         const string rtf = "{\\rtf1\\ansi Test}";
-        MemoryStream stream = new(Encoding.Default.GetBytes(rtf));
+        MemoryStream stream = new(Encoding.ASCII.GetBytes(rtf));
         using HGlobalNativeDataObject dataObject = new(stream, (ushort)DataFormats.GetOrAddFormat(DataFormatNames.Rtf).Id);
 
         var composition = Composition.Create(ComHelpers.GetComPointer<IDataObject>(dataObject));
         object? data = composition.GetData(DataFormatNames.Rtf);
 
         data.Should().Be(rtf);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GetData_Rtf_UsesWindowsAnsiEncoding(bool nullTerminated)
+    {
+        const string text = "{\\rtf1\\ansi A\u00e9\u3042Z}";
+        int byteCount = PInvokeCore.WideCharToMultiByte(PInvokeCore.CP_ACP, 0, text, text.Length, null, 0, null);
+        byte[] bytes = new byte[byteCount + (nullTerminated ? 1 : 0)];
+        string expected;
+        fixed (byte* buffer = bytes)
+        {
+            PInvokeCore.WideCharToMultiByte(PInvokeCore.CP_ACP, 0, text, text.Length, (PSTR)buffer, byteCount, null);
+            expected = new string((sbyte*)buffer, 0, byteCount);
+        }
+
+        using MemoryStream stream = new(bytes);
+        using HGlobalNativeDataObject dataObject = new(stream, (ushort)DataFormats.GetOrAddFormat(DataFormatNames.Rtf).Id);
+        var composition = Composition.Create(ComHelpers.GetComPointer<IDataObject>(dataObject));
+
+        composition.GetData(DataFormatNames.Rtf).Should().Be(expected);
+        composition.TryGetData(DataFormatNames.Rtf, out string? result).Should().BeTrue();
+        result.Should().Be(expected);
     }
 
 #if NET

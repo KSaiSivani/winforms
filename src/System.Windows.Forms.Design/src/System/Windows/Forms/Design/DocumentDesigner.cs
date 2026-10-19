@@ -278,7 +278,7 @@ public partial class DocumentDesigner : ScrollableControlDesigner, IRootDesigner
         byte[] bytes = new byte[len];
         stm.Read(bytes, 0, len);
 
-        string clsid = Text.Encoding.Default.GetString(bytes);
+        string clsid = Text.Encoding.ASCII.GetString(bytes);
         int index = clsid.IndexOf('}');
         clsid = clsid[..(index + 1)];
 

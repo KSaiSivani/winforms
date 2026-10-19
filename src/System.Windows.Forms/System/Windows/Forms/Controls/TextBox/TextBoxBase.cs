@@ -2325,7 +2325,7 @@ public abstract partial class TextBoxBase : Control
     /// </summary>
     private static void ToUnicodeOffsets(string str, ref int start, ref int end)
     {
-        Encoding e = Encoding.Default;
+        Encoding e = CodePagesEncodingProvider.Instance.GetEncoding(0) ?? Encoding.UTF8;
 
         byte[] bytes = e.GetBytes(str);
 
@@ -2374,7 +2374,7 @@ public abstract partial class TextBoxBase : Control
     /// </summary>
     internal static void ToDbcsOffsets(string str, ref int start, ref int end)
     {
-        Encoding e = Encoding.Default;
+        Encoding e = CodePagesEncodingProvider.Instance.GetEncoding(0) ?? Encoding.UTF8;
 
         bool swap = start > end;
 

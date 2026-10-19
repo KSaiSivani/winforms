@@ -73,6 +73,51 @@ public class ResXFileRef_Converter
     }
 
     [Fact]
+    public void ConvertFrom_StringWithoutEncoding_UsesWindowsAnsiEncoding()
+    {
+        Encoding encoding = CodePagesEncodingProvider.Instance.GetEncoding(0) ?? Encoding.UTF8;
+        byte[] bytes = encoding.GetBytes("A\u00e9\u3042Z");
+        using TempFile file = TempFile.Create(bytes);
+        ResXFileRef.Converter converter = new();
+
+        object result = converter.ConvertFrom($"{file.Path};System.String");
+
+        Assert.Equal(encoding.GetString(bytes), result);
+    }
+
+    [Theory]
+    [InlineData("utf-8")]
+    [InlineData("utf-16")]
+    [InlineData("iso-8859-1")]
+    public void ConvertFrom_StringWithEncoding_UsesSpecifiedEncoding(string encodingName)
+    {
+        const string text = "A\u00e9Z";
+        Encoding encoding = Encoding.GetEncoding(encodingName);
+        using TempFile file = TempFile.Create(encoding.GetBytes(text));
+        ResXFileRef.Converter converter = new();
+
+        object result = converter.ConvertFrom($"{file.Path};System.String;{encodingName}");
+
+        Assert.Equal(text, result);
+    }
+
+    [Theory]
+    [InlineData("utf-8")]
+    [InlineData("utf-16")]
+    [InlineData("utf-16BE")]
+    public void ConvertFrom_StringWithoutEncoding_DetectsByteOrderMark(string encodingName)
+    {
+        const string text = "A\u00e9\u3042Z";
+        Encoding encoding = Encoding.GetEncoding(encodingName);
+        using TempFile file = TempFile.Create([.. encoding.GetPreamble(), .. encoding.GetBytes(text)]);
+        ResXFileRef.Converter converter = new();
+
+        object result = converter.ConvertFrom($"{file.Path};System.String");
+
+        Assert.Equal(text, result);
+    }
+
+    [Fact]
     public void ConvertFrom_ReadsFileAsByteArray()
     {
         string resxFileRefString = @"TestResources\Files\text.ansi.txt;System.Byte[]";

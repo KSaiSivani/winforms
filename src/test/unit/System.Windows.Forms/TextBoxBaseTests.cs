@@ -6,6 +6,7 @@
 using System.ComponentModel;
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms.TestUtilities;
 using Moq;
 using Point = System.Drawing.Point;
@@ -16,6 +17,31 @@ namespace System.Windows.Forms.Tests;
 public partial class TextBoxBaseTests
 {
     private static readonly int s_preferredHeight = Control.DefaultFont.Height + SystemInformation.BorderSize.Height * 4 + 3;
+
+    [Theory]
+    [InlineData(0, 4)]
+    [InlineData(1, 3)]
+    [InlineData(3, 1)]
+    [InlineData(2, 2)]
+    public void TextBoxBase_Offsets_UseWindowsAnsiEncoding(int start, int end)
+    {
+        const string text = "A\u00e9\u3042Z";
+        Encoding encoding = CodePagesEncodingProvider.Instance.GetEncoding(0) ?? Encoding.UTF8;
+        int expectedStart = encoding.GetByteCount(text.AsSpan(0, start));
+        int expectedEnd = encoding.GetByteCount(text.AsSpan(0, end));
+        int originalStart = start;
+        int originalEnd = end;
+
+        TextBoxBase.ToDbcsOffsets(text, ref start, ref end);
+
+        Assert.Equal(expectedStart, start);
+        Assert.Equal(expectedEnd, end);
+
+        typeof(TextBoxBase).TestAccessor.Dynamic.ToUnicodeOffsets(text, ref start, ref end);
+
+        Assert.Equal(originalStart, start);
+        Assert.Equal(originalEnd, end);
+    }
 
     [WinFormsTheory]
     [InlineData(typeof(TextBox))]

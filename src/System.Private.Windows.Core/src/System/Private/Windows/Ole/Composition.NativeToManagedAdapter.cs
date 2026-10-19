@@ -115,7 +115,7 @@ internal unsafe partial class Composition<TOleServices, TNrbfSerializer, TDataFo
             object? value = request.Format switch
             {
                 DataFormatNames.Text or DataFormatNames.OemText => ReadStringFromHGLOBAL(hglobal, unicode: false),
-                DataFormatNames.Rtf => ReadRegisteredFormatStringFromHGLOBAL(hglobal, Encoding.Default),
+                DataFormatNames.Rtf => ReadRegisteredFormatStringFromHGLOBAL(hglobal),
                 DataFormatNames.Html or DataFormatNames.Xaml => ReadUtf8StringFromHGLOBAL(hglobal),
                 DataFormatNames.UnicodeText => ReadStringFromHGLOBAL(hglobal, unicode: true),
                 DataFormatNames.FileDrop => ReadFileListFromHDROP((HDROP)(nint)hglobal),
@@ -238,7 +238,7 @@ internal unsafe partial class Composition<TOleServices, TNrbfSerializer, TDataFo
             }
         }
 
-        private static unsafe string ReadRegisteredFormatStringFromHGLOBAL(HGLOBAL hglobal, Encoding encoding)
+        private static unsafe string ReadRegisteredFormatStringFromHGLOBAL(HGLOBAL hglobal)
         {
             void* buffer = PInvokeCore.GlobalLock(hglobal);
             if (buffer is null)
@@ -264,7 +264,8 @@ internal unsafe partial class Composition<TOleServices, TNrbfSerializer, TDataFo
                     bytes = bytes[..nullIndex];
                 }
 
-                return bytes.IsEmpty ? string.Empty : encoding.GetString(bytes);
+                // Match the Windows ANSI encoding used by SaveDbcsToHGLOBAL.
+                return new string((sbyte*)buffer, 0, bytes.Length);
             }
             finally
             {

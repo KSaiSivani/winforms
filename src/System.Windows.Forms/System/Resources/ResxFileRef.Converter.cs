@@ -108,7 +108,10 @@ public partial class ResXFileRef
             if (toCreate == typeof(string))
             {
                 // We have a string, now we need to check the encoding.
-                Encoding textFileEncoding = parts.Length > 2 ? Encoding.GetEncoding(parts[2]) : Encoding.Default;
+                // Unspecified encodings use the Windows ANSI code page, as on .NET Framework.
+                Encoding textFileEncoding = parts.Length > 2
+                    ? Encoding.GetEncoding(parts[2])
+                    : CodePagesEncodingProvider.Instance.GetEncoding(0) ?? Encoding.UTF8;
                 using StreamReader sr = new(fileName, textFileEncoding);
                 return sr.ReadToEnd();
             }
