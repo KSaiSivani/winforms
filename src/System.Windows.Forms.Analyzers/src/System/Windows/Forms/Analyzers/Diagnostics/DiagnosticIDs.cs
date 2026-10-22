@@ -19,6 +19,7 @@ internal static class DiagnosticIDs
     // WinForms Usage, number group 2000+
     public const string PropertyAllocatesNewInstance = "WFO2000";
     public const string AvoidPassingFuncReturningTaskWithoutCancellationToken = "WFO2001";
+    public const string SpecifyMessageBoxOptions = "WFO2002";
 
     // WinForms Designer, number group 3000+
     public const string UnsupportedInitializeComponentCode = "WFO3000";

@@ -27,6 +27,16 @@
         <target state="new">Avoid constructing fresh reference instances in property getters</target>
         <note />
       </trans-unit>
+      <trans-unit id="WFO2002Message">
+        <source>Use a MessageBox.Show overload that takes MessageBoxOptions; specify RightAlign and RtlReading when a right-to-left reading order is required</source>
+        <target state="new">Use a MessageBox.Show overload that takes MessageBoxOptions; specify RightAlign and RtlReading when a right-to-left reading order is required</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="WFO2002Title">
+        <source>Specify MessageBoxOptions</source>
+        <target state="new">Specify MessageBoxOptions</target>
+        <note />
+      </trans-unit>
       <trans-unit id="WFO3000Message">
         <source>'{0}' cannot round-trip through the WinForms Designer; keep InitializeComponent unrolled and move runtime-only logic to the user partial after InitializeComponent</source>
         <target state="new">'{0}' cannot round-trip through the WinForms Designer; keep InitializeComponent unrolled and move runtime-only logic to the user partial after InitializeComponent</target>

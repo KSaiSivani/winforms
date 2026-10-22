@@ -213,4 +213,10 @@
   <data name="WFO3012Message" xml:space="preserve">
     <value>Use Handles {0} on a named handler in the user partial instead of AddHandler in InitializeComponent; remove the redundant hookup and keep component members WithEvents</value>
   </data>
+  <data name="WFO2002Title" xml:space="preserve">
+    <value>Specify MessageBoxOptions</value>
+  </data>
+  <data name="WFO2002Message" xml:space="preserve">
+    <value>Use a MessageBox.Show overload that takes MessageBoxOptions; specify RightAlign and RtlReading when a right-to-left reading order is required</value>
+  </data>
 </root>

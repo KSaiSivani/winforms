@@ -134,6 +134,15 @@ internal static partial class SharedDiagnosticDescriptors
             category: DiagnosticCategories.WinFormsUsage,
             defaultSeverity: DiagnosticSeverity.Warning);
 
+    // WFO2002
+    internal static readonly DiagnosticDescriptor s_specifyMessageBoxOptions =
+        DiagnosticDescriptorHelper.Create(
+            id: DiagnosticIDs.SpecifyMessageBoxOptions,
+            title: new LocalizableResourceString(nameof(SR.WFO2002Title), SR.ResourceManager, typeof(SR)),
+            messageFormat: new LocalizableResourceString(nameof(SR.WFO2002Message), SR.ResourceManager, typeof(SR)),
+            category: DiagnosticCategories.WinFormsUsage,
+            defaultSeverity: DiagnosticSeverity.Warning);
+
     // WFO3010 (Visual Basic)
     internal static readonly DiagnosticDescriptor s_visualBasicUnsupportedAnonymousFunction =
         DiagnosticDescriptorHelper.Create(

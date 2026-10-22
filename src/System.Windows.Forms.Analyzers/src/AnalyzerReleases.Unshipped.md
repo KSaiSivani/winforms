@@ -6,6 +6,7 @@
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
 WFO2000 | WinForms Usage | Warning | Flags fresh instances returned by property getters (C#, Visual Basic), [Documentation](https://aka.ms/winforms-warnings/wfo2000)
+WFO2002 | WinForms Usage | Warning | SpecifyMessageBoxOptionsAnalyzer (C#, Visual Basic), [Documentation](https://aka.ms/winforms-warnings/wfo2002)
 WFO3000 | WinForms Designer | Error | Rejects unsupported InitializeComponent code (C#, Visual Basic), [Documentation](https://aka.ms/winforms-warnings/wfo3000)
 WFO3001 | WinForms Designer | Error | Keeps custom members out of Designer files (C#, Visual Basic), [Documentation](https://aka.ms/winforms-warnings/wfo3001)
 WFO3002 | WinForms Designer | Warning | Keeps generated fields at the end (C#, Visual Basic), [Documentation](https://aka.ms/winforms-warnings/wfo3002)
