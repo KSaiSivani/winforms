@@ -12,7 +12,7 @@ public class CollectionCodeDomSerializerTests
     [Fact]
     public void CollectionCodeDomSerializer_Constructor()
     {
-        CollectionCodeDomSerializer underTest = CollectionCodeDomSerializer.Default;
+        CollectionCodeDomSerializer underTest = new();
         Assert.NotNull(underTest);
     }
 
@@ -31,6 +31,18 @@ public class CollectionCodeDomSerializerTests
         CollectionCodeDomSerializer underTest = CollectionCodeDomSerializer.Default;
 
         Assert.Throws<ArgumentNullException>(() => underTest.Deserialize(manager, null));
+        CollectionCodeDomSerializer underTest = new();
+
+        Assert.Throws<ArgumentNullException>("manager", () => underTest.Deserialize(null, new object()));
+    }
+
+    [Fact]
+    public void CollectionCodeDomSerializer_Deserialize_NullCodeObject_ThrowsArgumentNullException()
+    {
+        DesignerSerializationManager manager = new();
+        CollectionCodeDomSerializer underTest = new();
+
+        Assert.Throws<ArgumentNullException>("codeObject", () => underTest.Deserialize(manager, null));
     }
 
     [Fact]
@@ -39,6 +51,9 @@ public class CollectionCodeDomSerializerTests
         CollectionCodeDomSerializer underTest = CollectionCodeDomSerializer.Default;
 
         Assert.Throws<ArgumentNullException>(() => underTest.Serialize(null, new object()));
+        CollectionCodeDomSerializer underTest = new();
+
+        Assert.Throws<ArgumentNullException>("manager", () => underTest.Serialize(null, new object()));
     }
 
     [Fact]
@@ -48,6 +63,9 @@ public class CollectionCodeDomSerializerTests
         CollectionCodeDomSerializer underTest = CollectionCodeDomSerializer.Default;
 
         Assert.Throws<ArgumentNullException>(() => underTest.Serialize(manager, null));
+        CollectionCodeDomSerializer underTest = new();
+
+        Assert.Throws<ArgumentNullException>("value", () => underTest.Serialize(manager, null));
     }
 }
 

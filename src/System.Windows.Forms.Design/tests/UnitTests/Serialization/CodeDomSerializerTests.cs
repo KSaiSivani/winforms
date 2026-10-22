@@ -4,12 +4,12 @@
 #nullable disable
 
 using System.CodeDom;
-using System.Collections;
 using System.ComponentModel;
 using System.ComponentModel.Design;
 using System.ComponentModel.Design.Serialization;
-using System.Globalization;
-using System.Reflection;
+using System.Drawing;
+using System.Text;
+using Moq;
 
 namespace System.Windows.Forms.Design.Serialization.Tests;
 
@@ -19,6 +19,7 @@ public class CodeDomSerializerTests
     public void CodeDomSerializer_Constructor()
     {
         CodeDomSerializer underTest = new();
+
         Assert.NotNull(underTest);
     }
 
@@ -31,50 +32,7 @@ public class CodeDomSerializerTests
     }
 
     [Fact]
-    public void CodeDomSerializer_Deserialize_CodePrimitiveExpression_ReturnsValue()
-    {
-        DesignerSerializationManager manager = new();
-        CodeDomSerializer underTest = new();
-        CodePrimitiveExpression expression = new(42);
-
-        object result = underTest.Deserialize(manager, expression);
-
-        Assert.Equal(42, result);
-    }
-
-    [Fact]
-    public void CodeDomSerializer_Deserialize_CodeStatementCollection_ReturnsDeclaredValue()
-    {
-        DesignerSerializationManager manager = new();
-        using IDisposable session = manager.CreateSession();
-        CodeDomSerializer underTest = new();
-        CodeStatementCollection statements =
-        [
-            new CodeVariableDeclarationStatement(typeof(int), "value", new CodePrimitiveExpression(42))
-        ];
-
-        object result = underTest.Deserialize(manager, statements);
-
-        Assert.Equal(42, result);
-        Assert.Empty(manager.Errors);
-    }
-
-    [Fact]
-    public void CodeDomSerializer_Deserialize_CodeStatement_ReturnsNull()
-    {
-        DesignerSerializationManager manager = new();
-        using IDisposable session = manager.CreateSession();
-        CodeDomSerializer underTest = new();
-        CodeExpressionStatement statement = new(new CodePrimitiveExpression(42));
-
-        object result = underTest.Deserialize(manager, statement);
-
-        Assert.Null(result);
-        Assert.Empty(manager.Errors);
-    }
-
-    [Fact]
-    public void CodeDomSerializer_Deserialize_NullValue_ThrowsArgumentNullException()
+    public void CodeDomSerializer_Deserialize_NullCodeObject_ThrowsArgumentNullException()
     {
         DesignerSerializationManager manager = new();
         CodeDomSerializer underTest = new();
@@ -82,17 +40,67 @@ public class CodeDomSerializerTests
         Assert.Throws<ArgumentNullException>("codeObject", () => underTest.Deserialize(manager, null));
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(42)]
+    [InlineData("value")]
+    public void CodeDomSerializer_Deserialize_PrimitiveExpression_ReturnsValue(object value)
+    {
+        DesignerSerializationManager manager = new();
+        using IDisposable session = manager.CreateSession();
+        CodeDomSerializer underTest = new();
+
+        object result = underTest.Deserialize(manager, new CodePrimitiveExpression(value));
+
+        Assert.Equal(value, result);
+        Assert.Empty(manager.Errors);
+    }
+
     [Fact]
-    public void CodeDomSerializer_Deserialize_InvalidCodeObject_ThrowsException()
+    public void CodeDomSerializer_Deserialize_SingleStatement_ReturnsNull()
+    {
+        DesignerSerializationManager manager = new();
+        using IDisposable session = manager.CreateSession();
+        CodeDomSerializer underTest = new();
+
+        object result = underTest.Deserialize(manager, new CodeExpressionStatement(new CodePrimitiveExpression(42)));
+
+        Assert.Null(result);
+        Assert.Empty(manager.Errors);
+    }
+
+    [Fact]
+    public void CodeDomSerializer_Deserialize_InvalidCodeObject_ThrowsArgumentException()
     {
         DesignerSerializationManager manager = new();
         CodeDomSerializer underTest = new();
+        using NoAssertContext context = new();
 
-#if DEBUG
-        Assert.Throws<InvalidOperationException>(() => underTest.Deserialize(manager, new object()));
-#else
         Assert.Throws<ArgumentException>(() => underTest.Deserialize(manager, new object()));
-#endif
+    }
+
+    [Fact]
+    public void CodeDomSerializer_Deserialize_StatementsAfterDeclaration_SetsProperty()
+    {
+        DesignerSerializationManager manager = new();
+        using IDisposable session = manager.CreateSession();
+        CodeDomSerializer underTest = new();
+        CodeStatementCollection statements =
+        [
+            new CodeVariableDeclarationStatement(
+                typeof(StringBuilder),
+                "value",
+                new CodeObjectCreateExpression(typeof(StringBuilder))),
+            new CodeAssignStatement(
+                new CodePropertyReferenceExpression(new CodeVariableReferenceExpression("value"), nameof(StringBuilder.Capacity)),
+                new CodePrimitiveExpression(42))
+        ];
+
+        var result = Assert.IsType<StringBuilder>(underTest.Deserialize(manager, statements));
+
+        Assert.Equal(42, result.Capacity);
+        Assert.Same(result, ((IDesignerSerializationManager)manager).GetInstance("value"));
+        Assert.Empty(manager.Errors);
     }
 
     [Fact]
@@ -113,13 +121,12 @@ public class CodeDomSerializerTests
     }
 
     [Fact]
-    public void CodeDomSerializer_Serialize_Type_ReturnsCodeTypeOfExpression()
+    public void CodeDomSerializer_Serialize_Type_ReturnsTypeOfExpression()
     {
         DesignerSerializationManager manager = new();
         CodeDomSerializer underTest = new();
 
-        CodeTypeOfExpression result = Assert.IsType<CodeTypeOfExpression>(
-            underTest.Serialize(manager, typeof(string)));
+        var result = Assert.IsType<CodeTypeOfExpression>(underTest.Serialize(manager, typeof(string)));
 
         Assert.Equal(typeof(string).FullName, result.Type.BaseType);
     }
@@ -131,43 +138,47 @@ public class CodeDomSerializerTests
         using IDisposable session = manager.CreateSession();
         CodeDomSerializer underTest = new();
 
-        CodeObjectCreateExpression result = Assert.IsType<CodeObjectCreateExpression>(
-            underTest.Serialize(manager, new CompleteData(42)));
+        var result = Assert.IsType<CodeObjectCreateExpression>(underTest.Serialize(manager, new Point(42, 84)));
 
-        Assert.Equal(typeof(CompleteData).FullName, result.CreateType.BaseType);
-        CodePrimitiveExpression argument = Assert.IsType<CodePrimitiveExpression>(
-            Assert.Single(result.Parameters.Cast<CodeExpression>()));
-        Assert.Equal(42, argument.Value);
+        Assert.Equal(typeof(Point).FullName, result.CreateType.BaseType);
+        Assert.Collection(
+            result.Parameters.Cast<CodeExpression>(),
+            parameter => Assert.Equal(42, Assert.IsType<CodePrimitiveExpression>(parameter).Value),
+            parameter => Assert.Equal(84, Assert.IsType<CodePrimitiveExpression>(parameter).Value));
         Assert.Empty(manager.Errors);
     }
 
-    [Fact]
-    public void CodeDomSerializer_Serialize_IncompleteObject_ReturnsDeclarationAndPropertyAssignment()
+    [Theory]
+    [InlineData(null, "testdata1", "testdata2")]
+    [InlineData("testdata1", "testdata1", "testdata2")]
+    [InlineData("existingName", "existingName", "testdata1")]
+    public void CodeDomSerializer_Serialize_MultipleObjects_PreservesUniqueNames(
+        string existingName,
+        string firstExpectedName,
+        string secondExpectedName)
     {
         DesignerSerializationManager manager = new();
         using IDisposable session = manager.CreateSession();
-        CodeDomSerializer underTest = new();
+        var underTest = Assert.IsType<CodeDomSerializer>(
+            manager.GetSerializer(typeof(TestData), typeof(CodeDomSerializer)));
+        TestData first = new() { Number = 42 };
+        TestData second = new() { Number = 84 };
+        var serializationManager = (IDesignerSerializationManager)manager;
+        if (existingName is not null)
+        {
+            serializationManager.SetName(first, existingName);
+        }
 
-        CodeStatementCollection result = Assert.IsType<CodeStatementCollection>(
-            underTest.Serialize(manager, new TestData { Number = 42 }));
+        object firstResult = underTest.Serialize(manager, first);
+        object secondResult = underTest.Serialize(manager, second);
 
-        Assert.Collection(
-            result.Cast<CodeStatement>(),
-            statement =>
-            {
-                CodeVariableDeclarationStatement declaration = Assert.IsType<CodeVariableDeclarationStatement>(statement);
-                Assert.Equal("testdata1", declaration.Name);
-                Assert.IsType<CodeObjectCreateExpression>(declaration.InitExpression);
-            },
-            statement =>
-            {
-                CodeAssignStatement assignment = Assert.IsType<CodeAssignStatement>(statement);
-                CodePropertyReferenceExpression property = Assert.IsType<CodePropertyReferenceExpression>(assignment.Left);
-                Assert.Equal(nameof(TestData.Number), property.PropertyName);
-                CodeVariableReferenceExpression target = Assert.IsType<CodeVariableReferenceExpression>(property.TargetObject);
-                Assert.Equal("testdata1", target.VariableName);
-                Assert.Equal(42, Assert.IsType<CodePrimitiveExpression>(assignment.Right).Value);
-            });
+        AssertSerializedValue(firstResult, firstExpectedName, first.Number);
+        AssertSerializedValue(secondResult, secondExpectedName, second.Number);
+        Assert.NotEqual(firstExpectedName, secondExpectedName);
+        Assert.Equal(firstExpectedName, serializationManager.GetName(first));
+        Assert.Equal(secondExpectedName, serializationManager.GetName(second));
+        Assert.Same(first, serializationManager.GetInstance(firstExpectedName));
+        Assert.Same(second, serializationManager.GetInstance(secondExpectedName));
         Assert.Empty(manager.Errors);
     }
 
@@ -204,47 +215,46 @@ public class CodeDomSerializerTests
     {
         DesignerSerializationManager manager = new();
         using IDisposable session = manager.CreateSession();
-        CodeDomSerializer underTest = Assert.IsType<CodeDomSerializer>(
+        var underTest = Assert.IsType<CodeDomSerializer>(
             manager.GetSerializer(typeof(TestData), typeof(CodeDomSerializer)));
         TestData value = new() { Number = 42 };
         PropertyDescriptor property = TypeDescriptor.GetProperties(value)[nameof(TestData.Number)];
 
         CodeStatementCollection statements = underTest.SerializeMember(manager, value, property);
 
+        var assignment = Assert.IsType<CodeAssignStatement>(Assert.Single(statements.Cast<CodeStatement>()));
+        AssertPropertyAssignment(assignment, "testdata1", 42);
+        Assert.Same(value, ((IDesignerSerializationManager)manager).GetInstance("testdata1"));
         Assert.Empty(manager.Errors);
-        CodeAssignStatement assignment = Assert.IsType<CodeAssignStatement>(
-            Assert.Single(statements.Cast<CodeStatement>()));
-        CodePropertyReferenceExpression target = Assert.IsType<CodePropertyReferenceExpression>(assignment.Left);
-        Assert.Equal(nameof(TestData.Number), target.PropertyName);
-        CodeVariableReferenceExpression targetObject = Assert.IsType<CodeVariableReferenceExpression>(target.TargetObject);
-        Assert.Equal("testdata1", targetObject.VariableName);
-        CodePrimitiveExpression assignedValue = Assert.IsType<CodePrimitiveExpression>(assignment.Right);
-        Assert.Equal(42, assignedValue.Value);
     }
 
     [Fact]
     public void CodeDomSerializer_SerializeMember_Event_ReturnsAttachStatement()
     {
-        TestEventBindingService eventBindingService = new("OnChanged");
-        DesignerSerializationManager manager = new(new TestServiceProvider(eventBindingService));
-        using IDisposable session = manager.CreateSession();
-        CodeDomSerializer underTest = Assert.IsType<CodeDomSerializer>(
-            manager.GetSerializer(typeof(TestData), typeof(CodeDomSerializer)));
         TestData value = new();
-        EventDescriptor @event = TypeDescriptor.GetEvents(value)[nameof(TestData.Changed)];
+        EventDescriptor descriptor = TypeDescriptor.GetEvents(value)[nameof(TestData.Changed)];
+        Mock<PropertyDescriptor> eventProperty = new("Changed", Array.Empty<Attribute>());
+        eventProperty.Setup(property => property.GetValue(value)).Returns("OnChanged");
+        Mock<IEventBindingService> eventBindings = new();
+        eventBindings.Setup(service => service.GetEventProperty(descriptor)).Returns(eventProperty.Object);
+        using ServiceContainer services = new();
+        services.AddService(typeof(IEventBindingService), eventBindings.Object);
+        DesignerSerializationManager manager = new(services);
+        using IDisposable session = manager.CreateSession();
+        var underTest = Assert.IsType<CodeDomSerializer>(
+            manager.GetSerializer(typeof(TestData), typeof(CodeDomSerializer)));
 
-        CodeStatementCollection statements = underTest.SerializeMember(manager, value, @event);
+        CodeStatementCollection statements = underTest.SerializeMember(manager, value, descriptor);
 
-        Assert.Empty(manager.Errors);
-        CodeAttachEventStatement statement = Assert.IsType<CodeAttachEventStatement>(
-            Assert.Single(statements.Cast<CodeStatement>()));
+        var statement = Assert.IsType<CodeAttachEventStatement>(Assert.Single(statements.Cast<CodeStatement>()));
         Assert.Equal(nameof(TestData.Changed), statement.Event.EventName);
-        CodeVariableReferenceExpression target = Assert.IsType<CodeVariableReferenceExpression>(
-            statement.Event.TargetObject);
+        var target = Assert.IsType<CodeVariableReferenceExpression>(statement.Event.TargetObject);
         Assert.Equal("testdata1", target.VariableName);
-        CodeDelegateCreateExpression listener = Assert.IsType<CodeDelegateCreateExpression>(statement.Listener);
+        var listener = Assert.IsType<CodeDelegateCreateExpression>(statement.Listener);
+        Assert.Equal(typeof(EventHandler).FullName, listener.DelegateType.BaseType);
         Assert.IsType<CodeThisReferenceExpression>(listener.TargetObject);
         Assert.Equal("OnChanged", listener.MethodName);
+        Assert.Empty(manager.Errors);
     }
 
     [Fact]
@@ -253,99 +263,50 @@ public class CodeDomSerializerTests
         DesignerSerializationManager manager = new();
         using IDisposable session = manager.CreateSession();
         CodeDomSerializer underTest = new();
+        Mock<MemberDescriptor> member = new("Member");
 
-        Assert.Throws<NotSupportedException>(
-            () => underTest.SerializeMember(manager, new TestData(), new TestMemberDescriptor()));
+        Assert.Throws<NotSupportedException>(() => underTest.SerializeMember(manager, new TestData(), member.Object));
     }
 
-    [TypeConverter(typeof(CompleteDataConverter))]
-    public sealed class CompleteData
+    private static void AssertSerializedValue(object result, string expectedName, int expectedNumber)
     {
-        public CompleteData(int number) => Number = number;
+        var statements = Assert.IsType<CodeStatementCollection>(result);
 
-        public int Number { get; }
-    }
-
-    public sealed class CompleteDataConverter : TypeConverter
-    {
-        public override bool CanConvertTo(ITypeDescriptorContext context, Type destinationType)
-            => destinationType == typeof(InstanceDescriptor) || base.CanConvertTo(context, destinationType);
-
-        public override object ConvertTo(
-            ITypeDescriptorContext context,
-            CultureInfo culture,
-            object value,
-            Type destinationType)
-        {
-            if (destinationType == typeof(InstanceDescriptor) && value is CompleteData data)
+        Assert.Collection(
+            statements.Cast<CodeStatement>(),
+            statement =>
             {
-                ConstructorInfo constructor = typeof(CompleteData).GetConstructor([typeof(int)]);
-                return new InstanceDescriptor(constructor, [data.Number], isComplete: true);
-            }
-
-            return base.ConvertTo(context, culture, value, destinationType);
-        }
+                var declaration = Assert.IsType<CodeVariableDeclarationStatement>(statement);
+                Assert.Equal(expectedName, declaration.Name);
+                Assert.Equal(typeof(TestData).FullName, declaration.Type.BaseType);
+                var creation = Assert.IsType<CodeObjectCreateExpression>(declaration.InitExpression);
+                Assert.Equal(typeof(TestData).FullName, creation.CreateType.BaseType);
+                Assert.Empty(creation.Parameters);
+            },
+            statement =>
+            {
+                var assignment = Assert.IsType<CodeAssignStatement>(statement);
+                AssertPropertyAssignment(assignment, expectedName, expectedNumber);
+            });
     }
 
+    private static void AssertPropertyAssignment(CodeAssignStatement assignment, string expectedName, int expectedNumber)
+    {
+        var property = Assert.IsType<CodePropertyReferenceExpression>(assignment.Left);
+        Assert.Equal(nameof(TestData.Number), property.PropertyName);
+        var target = Assert.IsType<CodeVariableReferenceExpression>(property.TargetObject);
+        Assert.Equal(expectedName, target.VariableName);
+        Assert.Equal(expectedNumber, Assert.IsType<CodePrimitiveExpression>(assignment.Right).Value);
+    }
+
+    /// <summary>
+    ///  Provides a constructible object with a serializable property.
+    /// </summary>
     private sealed class TestData
     {
         [DefaultValue(0)]
         public int Number { get; set; }
 
         public event EventHandler Changed;
-    }
-
-    private sealed class TestEventBindingService(string methodName) : IEventBindingService
-    {
-        private readonly PropertyDescriptor _eventProperty = new TestEventPropertyDescriptor(methodName);
-
-        public string CreateUniqueMethodName(IComponent component, EventDescriptor e) => throw new NotSupportedException();
-
-        public ICollection GetCompatibleMethods(EventDescriptor e) => throw new NotSupportedException();
-
-        public EventDescriptor GetEvent(PropertyDescriptor property) => throw new NotSupportedException();
-
-        public PropertyDescriptorCollection GetEventProperties(EventDescriptorCollection events)
-            => throw new NotSupportedException();
-
-        public PropertyDescriptor GetEventProperty(EventDescriptor e) => _eventProperty;
-
-        public bool ShowCode() => throw new NotSupportedException();
-
-        public bool ShowCode(int lineNumber) => throw new NotSupportedException();
-
-        public bool ShowCode(IComponent component, EventDescriptor e) => throw new NotSupportedException();
-    }
-
-    private sealed class TestEventPropertyDescriptor(string methodName) : PropertyDescriptor("Changed", [])
-    {
-        public override Type ComponentType => typeof(TestData);
-
-        public override bool IsReadOnly => false;
-
-        public override Type PropertyType => typeof(string);
-
-        public override bool CanResetValue(object component) => false;
-
-        public override object GetValue(object component) => methodName;
-
-        public override void ResetValue(object component)
-        {
-        }
-
-        public override void SetValue(object component, object value)
-        {
-        }
-
-        public override bool ShouldSerializeValue(object component) => false;
-    }
-
-    private sealed class TestMemberDescriptor() : MemberDescriptor("Member")
-    {
-    }
-
-    private sealed class TestServiceProvider(object service) : IServiceProvider
-    {
-        public object GetService(Type serviceType) => serviceType.IsInstanceOfType(service) ? service : null;
     }
 }
