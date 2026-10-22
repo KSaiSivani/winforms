@@ -946,6 +946,25 @@ public class DesignSurfaceTests
         Assert.Throws<ArgumentNullException>("rootComponentType", () => surface.BeginLoad((Type)null));
     }
 
+    [Fact]
+    public void DesignSurface_Add_Flushed_EventHandler()
+    {
+        using DesignSurface surface = new();
+        EventHandler handler = (sender, e) => { };
+
+        surface.Flushed += handler;
+    }
+
+    [Fact]
+    public void DesignSurface_Remove_Flushed_EventHandler()
+    {
+        using DesignSurface surface = new();
+        EventHandler handler = (sender, e) => { };
+
+        surface.Flushed += handler;
+        surface.Flushed -= handler;
+    }
+
     [WinFormsFact]
     public void DesignSurface_BeginLoad_AlreadyCalled_ThrowsInvalidOperationException()
     {
