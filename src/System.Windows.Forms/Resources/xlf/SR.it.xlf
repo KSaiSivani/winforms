@@ -10864,6 +10864,26 @@ Analisi dello stack dove si è verificata l'operazione non valida:
         <target state="translated">Posizione</target>
         <note />
       </trans-unit>
+      <trans-unit id="TrackBarSelectionLengthDescr">
+        <source>The length of the highlighted selection range.</source>
+        <target state="new">The length of the highlighted selection range.</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="TrackBarSelectionLengthError">
+        <source>SelectionLength: Value '{0}' must be greater than or equal to 0.</source>
+        <target state="new">SelectionLength: Value '{0}' must be greater than or equal to 0.</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="TrackBarSelectionStartDescr">
+        <source>The starting value of the highlighted selection range.</source>
+        <target state="new">The starting value of the highlighted selection range.</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="TrackBarShowSelectionRangeDescr">
+        <source>Indicates whether the selection range is highlighted.</source>
+        <target state="new">Indicates whether the selection range is highlighted.</target>
+        <note />
+      </trans-unit>
       <trans-unit id="TrackBarSmallChangeDescr">
         <source>The number of positions the slider moves in response to keyboard input (arrow keys).</source>
         <target state="translated">Il numero di posizioni di cui viene spostato il dispositivo di scorrimento in seguito alla pressione dei tasti di direzione.</target>

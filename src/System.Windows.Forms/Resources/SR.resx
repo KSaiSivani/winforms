@@ -6226,6 +6226,18 @@ Stack trace where the illegal operation occurred was:
   <data name="TrackBarOrientationDescr" xml:space="preserve">
     <value>The orientation of the control.</value>
   </data>
+  <data name="TrackBarSelectionLengthDescr" xml:space="preserve">
+    <value>The length of the highlighted selection range.</value>
+  </data>
+  <data name="TrackBarSelectionLengthError" xml:space="preserve">
+    <value>SelectionLength: Value '{0}' must be greater than or equal to 0.</value>
+  </data>
+  <data name="TrackBarSelectionStartDescr" xml:space="preserve">
+    <value>The starting value of the highlighted selection range.</value>
+  </data>
+  <data name="TrackBarShowSelectionRangeDescr" xml:space="preserve">
+    <value>Indicates whether the selection range is highlighted.</value>
+  </data>
   <data name="TrackBarSmallChangeDescr" xml:space="preserve">
     <value>The number of positions the slider moves in response to keyboard input (arrow keys).</value>
   </data>

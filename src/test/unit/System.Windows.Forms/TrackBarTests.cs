@@ -2362,6 +2362,181 @@ public class TrackBarTests
         Assert.Equal(0, control.SelectionLength);
     }
 
+    [WinFormsTheory]
+    [InlineData(Orientation.Horizontal, RightToLeft.No, false, false)]
+    [InlineData(Orientation.Horizontal, RightToLeft.Yes, false, true)]
+    [InlineData(Orientation.Horizontal, RightToLeft.Yes, true, false)]
+    [InlineData(Orientation.Vertical, RightToLeft.No, false, true)]
+    [InlineData(Orientation.Vertical, RightToLeft.Yes, false, true)]
+    [InlineData(Orientation.Vertical, RightToLeft.Yes, true, true)]
+    public void TrackBar_Selection_WithHandle_MatchesValueCoordinates(
+        Orientation orientation,
+        RightToLeft rightToLeft,
+        bool rightToLeftLayout,
+        bool reflected)
+    {
+        using TrackBar control = new()
+        {
+            Orientation = orientation,
+            RightToLeft = rightToLeft,
+            RightToLeftLayout = rightToLeftLayout,
+            SelectionStart = 2,
+            SelectionLength = 2,
+            ShowSelectionRange = true
+        };
+        Assert.False(control.IsHandleCreated);
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+        Assert.Equal(reflected ? 6 : 2, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(reflected ? 8 : 4, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+
+        control.SelectionLength = 3;
+        Assert.Equal(reflected ? 5 : 2, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(reflected ? 8 : 5, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+
+        control.SelectionStart = 3;
+        Assert.Equal(reflected ? 4 : 3, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(reflected ? 7 : 6, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+
+        control.SetRange(-10, 30);
+        Assert.Equal(reflected ? 14 : 3, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(reflected ? 17 : 6, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+
+        control.TickStyle = TickStyle.Both;
+        Assert.Equal(reflected ? 14 : 3, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(reflected ? 17 : 6, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+        Assert.Equal(3, control.SelectionStart);
+        Assert.Equal(3, control.SelectionLength);
+    }
+
+    [WinFormsFact]
+    public void TrackBar_Selection_ChangeOrientationAndRightToLeft_UpdatesNativeRange()
+    {
+        using TrackBar control = new()
+        {
+            SelectionStart = 2,
+            SelectionLength = 2,
+            ShowSelectionRange = true
+        };
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+
+        control.Orientation = Orientation.Vertical;
+        Assert.Equal(6, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(8, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+
+        control.Orientation = Orientation.Horizontal;
+        control.RightToLeft = RightToLeft.Yes;
+        Assert.Equal(6, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(8, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+
+        control.RightToLeftLayout = true;
+        Assert.Equal(2, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(4, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+
+        control.ShowSelectionRange = false;
+        control.SelectionStart = 3;
+        control.SelectionLength = 3;
+        control.ShowSelectionRange = true;
+        Assert.Equal(3, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(6, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+    }
+
+    [WinFormsTheory]
+    [InlineData(Orientation.Horizontal, 0, 10)]
+    [InlineData(Orientation.Vertical, 0, 10)]
+    public void TrackBar_Selection_EndInitWithHandle_SynchronizesConstrainedRange(
+        Orientation orientation,
+        int expectedStart,
+        int expectedEnd)
+    {
+        using TrackBar control = new()
+        {
+            Orientation = orientation,
+            ShowSelectionRange = true
+        };
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+
+        control.BeginInit();
+        control.SelectionStart = -5;
+        control.SelectionLength = 10;
+        control.EndInit();
+
+        Assert.Equal(0, control.SelectionStart);
+        Assert.Equal(10, control.SelectionLength);
+        Assert.Equal(expectedStart, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(expectedEnd, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+    }
+
+    [WinFormsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TrackBar_SelectionLength_SetIntMaxValue_ClampsWithoutOverflow(bool createHandle)
+    {
+        using TrackBar control = new()
+        {
+            SelectionStart = 1,
+            ShowSelectionRange = true
+        };
+        if (createHandle)
+        {
+            Assert.NotEqual(IntPtr.Zero, control.Handle);
+        }
+
+        control.SelectionLength = int.MaxValue;
+
+        Assert.Equal(1, control.SelectionStart);
+        Assert.Equal(9, control.SelectionLength);
+        Assert.Equal(createHandle, control.IsHandleCreated);
+        if (createHandle)
+        {
+            Assert.Equal(1, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+            Assert.Equal(10, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+        }
+    }
+
+    [WinFormsTheory]
+    [InlineData(int.MinValue, int.MaxValue, int.MinValue, int.MaxValue)]
+    [InlineData(int.MinValue, int.MaxValue, int.MaxValue - 1, 1)]
+    [InlineData(int.MaxValue - 10, int.MaxValue, int.MaxValue - 5, 5)]
+    public void TrackBar_SelectionLength_ExtremeRange_ClampsWithoutOverflow(
+        int minimum,
+        int maximum,
+        int start,
+        int expectedLength)
+    {
+        using TrackBar control = new();
+        control.SetRange(minimum, maximum);
+        control.SelectionStart = start;
+        control.SelectionLength = int.MaxValue;
+
+        Assert.Equal(start, control.SelectionStart);
+        Assert.Equal(expectedLength, control.SelectionLength);
+        Assert.False(control.IsHandleCreated);
+    }
+
+    [WinFormsTheory]
+    [InlineData(Orientation.Horizontal, int.MaxValue - 5, int.MaxValue)]
+    [InlineData(Orientation.Vertical, int.MaxValue - 10, int.MaxValue - 5)]
+    public void TrackBar_Selection_WithLargeBounds_ReflectsWithoutOverflow(
+        Orientation orientation,
+        int expectedStart,
+        int expectedEnd)
+    {
+        using TrackBar control = new()
+        {
+            Orientation = orientation,
+            ShowSelectionRange = true,
+            TickStyle = TickStyle.None
+        };
+        control.SetRange(int.MaxValue - 10, int.MaxValue);
+        control.SelectionStart = int.MaxValue - 5;
+        control.SelectionLength = int.MaxValue;
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+
+        Assert.Equal(5, control.SelectionLength);
+        Assert.Equal(expectedStart, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELSTART));
+        Assert.Equal(expectedEnd, (int)PInvokeCore.SendMessage(control, PInvoke.TBM_GETSELEND));
+    }
+
     [WinFormsFact]
     public void TrackBar_BeginInit_InvokeMultipleTimes_Success()
     {

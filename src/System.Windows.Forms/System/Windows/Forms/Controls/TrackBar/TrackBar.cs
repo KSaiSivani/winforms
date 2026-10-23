@@ -500,10 +500,7 @@ public partial class TrackBar : Control, ISupportInitialize
 
             _selectionLength = value;
             ConstrainSelection();
-            if (IsHandleCreated && _showSelectionRange)
-            {
-                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
-            }
+            SetTrackBarSelection();
         }
     }
 
@@ -531,11 +528,7 @@ public partial class TrackBar : Control, ISupportInitialize
 
             _selectionStart = value;
             ConstrainSelection();
-            if (IsHandleCreated && _showSelectionRange)
-            {
-                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)true, (LPARAM)_selectionStart);
-                PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
-            }
+            SetTrackBarSelection();
         }
     }
 
@@ -871,9 +864,9 @@ public partial class TrackBar : Control, ISupportInitialize
             _selectionLength = 0;
         }
 
-        if (_selectionStart + _selectionLength > _maximum)
+        if ((long)_selectionStart + _selectionLength > _maximum)
         {
-            _selectionLength = _maximum - _selectionStart;
+            _selectionLength = (int)((long)_maximum - _selectionStart);
         }
     }
 
@@ -940,6 +933,7 @@ public partial class TrackBar : Control, ISupportInitialize
         // Make sure the value is constrained by the minimum and maximum
         ConstrainValue();
         ConstrainSelection();
+        SetTrackBarSelection();
     }
 
     private void GetTrackBarValue()
@@ -1003,11 +997,7 @@ public partial class TrackBar : Control, ISupportInitialize
 
         PInvokeCore.SendMessage(this, PInvoke.TBM_SETPAGESIZE, (WPARAM)0, (LPARAM)_largeChange);
         PInvokeCore.SendMessage(this, PInvoke.TBM_SETLINESIZE, (WPARAM)0, (LPARAM)_smallChange);
-        if (_showSelectionRange)
-        {
-            PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)false, (LPARAM)_selectionStart);
-            PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)false, (LPARAM)(_selectionStart + _selectionLength));
-        }
+        SetTrackBarSelection(redraw: false);
 
         SetTrackBarPosition();
         AdjustSize();
@@ -1206,11 +1196,7 @@ public partial class TrackBar : Control, ISupportInitialize
                     DrawTicksManually();
                 }
 
-                if (_showSelectionRange)
-                {
-                    PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)false, (LPARAM)_selectionStart);
-                    PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)true, (LPARAM)(_selectionStart + _selectionLength));
-                }
+                SetTrackBarSelection();
 
                 Invalidate();
             }
@@ -1239,6 +1225,28 @@ public partial class TrackBar : Control, ISupportInitialize
                 SetTrackBarPosition();
             }
         }
+    }
+
+    private void SetTrackBarSelection(bool redraw = true)
+    {
+        if (!IsHandleCreated || !_showSelectionRange || _initializing)
+        {
+            return;
+        }
+
+        int start = _selectionStart;
+        int end = (int)((long)_selectionStart + _selectionLength);
+
+        // Match the value reflection used by SetTrackBarPosition.
+        if (_orientation == Orientation.Vertical
+            || (_orientation == Orientation.Horizontal && RightToLeft == RightToLeft.Yes && !IsMirrored))
+        {
+            long rangeSum = (long)_minimum + _maximum;
+            (start, end) = ((int)(rangeSum - end), (int)(rangeSum - start));
+        }
+
+        PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELSTART, (WPARAM)(BOOL)false, (LPARAM)start);
+        PInvokeCore.SendMessage(this, PInvoke.TBM_SETSELEND, (WPARAM)(BOOL)redraw, (LPARAM)end);
     }
 
     private void SetTrackBarPosition()
