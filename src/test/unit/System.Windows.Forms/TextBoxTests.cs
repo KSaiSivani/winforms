@@ -364,27 +364,37 @@ public partial class TextBoxTests
     public static IEnumerable<object[]> TextBox_ShouldRenderPlaceHolderText_TestData()
     {
         // Test PlaceholderText
-        yield return new object[] { null, /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 0, /* expected */ false };
-        yield return new object[] { "", /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 0, /* expected */ false };
+        yield return new object[] { null, /* multiline */ true, /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 0, /* expected */ false };
+        yield return new object[] { "", /* multiline */ true, /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 0, /* expected */ false };
 
         // Test UserPaint
-        yield return new object[] { "Text", /* isUserPaint */ true, /* isIsFocused */ false, /* textCount */ 0, /* expected */ false };
+        yield return new object[] { "Text", /* multiline */ true, /* isUserPaint */ true, /* isIsFocused */ false, /* textCount */ 0, /* expected */ false };
 
         // Test Focused
-        yield return new object[] { "Text", /* isUserPaint */ false, /* isIsFocused */ true, /* textCount */ 0, /* expected */ false };
+        yield return new object[] { "Text", /* multiline */ true, /* isUserPaint */ false, /* isIsFocused */ true, /* textCount */ 0, /* expected */ false };
 
         // Test TextLength
-        yield return new object[] { "Text", /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 1, /* expected */ false };
+        yield return new object[] { "Text", /* multiline */ true, /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 1, /* expected */ false };
 
-        // Happy path
-        yield return new object[] { "Text", /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 0, /* expected */ true };
+        // Native cue banner path
+        yield return new object[] { "Text", /* multiline */ false, /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 0, /* expected */ !Application.RenderWithVisualStyles };
+
+        // Custom rendering path
+        yield return new object[] { "Text", /* multiline */ true, /* isUserPaint */ false, /* isIsFocused */ false, /* textCount */ 0, /* expected */ true };
     }
 
     [WinFormsTheory]
     [MemberData(nameof(TextBox_ShouldRenderPlaceHolderText_TestData))]
-    public void TextBox_ShouldRenderPlaceHolderText(string text, bool isUserPaint, bool isIsFocused, int textCount, bool expected)
+    public void TextBox_ShouldRenderPlaceHolderText(string text, bool multiline, bool isUserPaint, bool isIsFocused, int textCount, bool expected)
     {
-        using SubTextBox textBox = new() { PlaceholderText = text, IsUserPaint = isUserPaint, IsFocused = isIsFocused, TextCount = textCount };
+        using SubTextBox textBox = new()
+        {
+            PlaceholderText = text,
+            Multiline = multiline,
+            IsUserPaint = isUserPaint,
+            IsFocused = isIsFocused,
+            TextCount = textCount
+        };
 
         bool result = textBox.TestAccessor.Dynamic.ShouldRenderPlaceHolderText();
         Assert.Equal(expected, result);
@@ -768,5 +778,7 @@ public partial class TextBoxTests
         public new void OnHandleCreated(EventArgs e) => base.OnHandleCreated(e);
 
         public new void OnHandleDestroyed(EventArgs e) => base.OnHandleDestroyed(e);
+
+        public new void RecreateHandle() => base.RecreateHandle();
     }
 }

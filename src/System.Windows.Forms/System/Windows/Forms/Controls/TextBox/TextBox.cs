@@ -636,6 +636,7 @@ public partial class TextBox : TextBoxBase
             return;
         }
 
+        UpdatePlaceholderText();
         SetSelectionOnHandle();
 
         if (_passwordChar != 0)
@@ -881,9 +882,28 @@ public partial class TextBox : TextBoxBase
                 _placeholderText = value;
                 if (IsHandleCreated)
                 {
-                    Invalidate();
+                    UpdatePlaceholderText();
                 }
             }
+        }
+    }
+
+    private bool ShouldUseNativeCueBanner
+        => Application.RenderWithVisualStyles && !Multiline;
+
+    private void UpdatePlaceholderText()
+    {
+        Debug.Assert(IsHandleCreated);
+
+        if (ShouldUseNativeCueBanner)
+        {
+            PInvokeCore.SendMessage(this, PInvokeCore.EM_SETCUEBANNER, 0, PlaceholderText);
+        }
+        else
+        {
+            // Ensure the edit control does not paint a stale native cue banner while the fallback is active.
+            PInvokeCore.SendMessage(this, PInvokeCore.EM_SETCUEBANNER, 0, string.Empty);
+            Invalidate();
         }
     }
 
@@ -892,8 +912,10 @@ public partial class TextBox : TextBoxBase
     /// </summary>
     private void DrawPlaceholderText(HDC hdc)
     {
-        TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.Top | TextFormatFlags.EndEllipsis;
-        Rectangle rectangle = ClientRectangle;
+        TextFormatFlags flags = TextFormatFlags.NoPadding | TextFormatFlags.Top;
+        RECT textRectangle = default;
+        PInvokeCore.SendMessage(this, PInvokeCore.EM_GETRECT, 0, ref textRectangle);
+        Rectangle rectangle = textRectangle;
 
         if (RightToLeft == RightToLeft.Yes)
         {
@@ -902,15 +924,12 @@ public partial class TextBox : TextBoxBase
             {
                 case HorizontalAlignment.Center:
                     flags |= TextFormatFlags.HorizontalCenter;
-                    rectangle.Offset(0, 1);
                     break;
                 case HorizontalAlignment.Left:
                     flags |= TextFormatFlags.Right;
-                    rectangle.Offset(1, 1);
                     break;
                 case HorizontalAlignment.Right:
                     flags |= TextFormatFlags.Left;
-                    rectangle.Offset(0, 1);
                     break;
             }
         }
@@ -921,15 +940,12 @@ public partial class TextBox : TextBoxBase
             {
                 case HorizontalAlignment.Center:
                     flags |= TextFormatFlags.HorizontalCenter;
-                    rectangle.Offset(0, 1);
                     break;
                 case HorizontalAlignment.Left:
                     flags |= TextFormatFlags.Left;
-                    rectangle.Offset(1, 1);
                     break;
                 case HorizontalAlignment.Right:
                     flags |= TextFormatFlags.Right;
-                    rectangle.Offset(0, 1);
                     break;
             }
         }
@@ -995,6 +1011,15 @@ public partial class TextBox : TextBoxBase
                 WmPrint(ref m);
                 break;
 
+            case PInvokeCore.WM_THEMECHANGED:
+                base.WndProc(ref m);
+                if (IsHandleCreated)
+                {
+                    UpdatePlaceholderText();
+                }
+
+                break;
+
             default:
                 base.WndProc(ref m);
                 break;
@@ -1003,6 +1028,7 @@ public partial class TextBox : TextBoxBase
 
     private bool ShouldRenderPlaceHolderText() =>
         !string.IsNullOrEmpty(PlaceholderText) &&
+        !ShouldUseNativeCueBanner &&
         !GetStyle(ControlStyles.UserPaint) &&
         !Focused &&
         TextLength == 0;
