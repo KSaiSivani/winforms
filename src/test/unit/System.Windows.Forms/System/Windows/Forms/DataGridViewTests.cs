@@ -4162,6 +4162,281 @@ public partial class DataGridViewTests : IDisposable
     }
 
     [WinFormsFact]
+    public void DataGridView_ClipboardCopyMode_GetDefault_ReturnsExpected()
+    {
+        using DataGridView control = new();
+
+        Assert.Equal(
+            DataGridViewClipboardCopyMode.EnableWithAutoHeaderText,
+            control.ClipboardCopyMode);
+    }
+
+    [WinFormsTheory]
+    [InlineData(DataGridViewClipboardCopyMode.Disable)]
+    [InlineData(DataGridViewClipboardCopyMode.EnableWithAutoHeaderText)]
+    [InlineData(DataGridViewClipboardCopyMode.EnableWithoutHeaderText)]
+    [InlineData(DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText)]
+    public void DataGridView_ClipboardCopyMode_SetValidValue_GetReturnsExpected(DataGridViewClipboardCopyMode value)
+    {
+        using DataGridView control = new();
+
+        control.ClipboardCopyMode = value;
+
+        Assert.Equal(value, control.ClipboardCopyMode);
+    }
+
+    [WinFormsTheory]
+    [InlineData((DataGridViewClipboardCopyMode)(-1))]
+    [InlineData((DataGridViewClipboardCopyMode)4)]
+    public void DataGridView_ClipboardCopyMode_SetInvalidValue_ThrowsInvalidEnumArgumentException(DataGridViewClipboardCopyMode value)
+    {
+        using DataGridView control = new();
+
+        Assert.Throws<InvalidEnumArgumentException>(() => control.ClipboardCopyMode = value);
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_ClipboardCopyModeDisable_ThrowsNotSupportedException()
+    {
+        using DataGridView control = new()
+        {
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.Disable
+        };
+
+        Assert.Throws<NotSupportedException>(control.GetClipboardContent);
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_FullRowSelect_NoSelectedRows_ReturnsNull()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        control.Columns.Add("Column1", "Column1");
+        control.Rows.Add("Value1");
+
+        Assert.Null(control.GetClipboardContent());
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_FullColumnSelect_SelectedColumn_ReturnsDataObject()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.FullColumnSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        DataGridViewTextBoxColumn column = new()
+        {
+            Name = "Column1",
+            HeaderText = "Column1",
+            SortMode = DataGridViewColumnSortMode.Programmatic
+        };
+
+        control.Columns.Add(column);
+        control.Rows.Add("Value1");
+        control.Columns[0].Selected = true;
+
+        using NoAssertContext context = new();
+
+        DataObject result = control.GetClipboardContent();
+
+        Assert.NotNull(result);
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_CellSelect_NoSelectedCells_ReturnsNull()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.CellSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        control.Columns.Add("Column1", "Column1");
+        control.Rows.Add("Value1");
+
+        Assert.Null(control.GetClipboardContent());
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_CellSelect_SelectedCell_ReturnsDataObject()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.CellSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        control.Columns.Add("Column1", "Column1");
+        control.Rows.Add("Value1");
+        control[0, 0].Selected = true;
+
+        using NoAssertContext context = new();
+
+        DataObject result = control.GetClipboardContent();
+
+        Assert.NotNull(result);
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_RowHeaderSelect_SelectedRow_ReturnsDataObject()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.RowHeaderSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        control.Columns.Add("Column1", "Column1");
+        int rowIndex = control.Rows.Add("Value1");
+        control.Rows[rowIndex].Selected = true;
+
+        using NoAssertContext context = new();
+
+        DataObject result = control.GetClipboardContent();
+
+        Assert.NotNull(result);
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_ColumnHeaderSelect_SelectedColumn_ReturnsDataObject()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.ColumnHeaderSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        DataGridViewTextBoxColumn column = new()
+        {
+            Name = "Column1",
+            HeaderText = "Column1",
+            SortMode = DataGridViewColumnSortMode.Programmatic
+        };
+
+        control.Columns.Add(column);
+        control.Rows.Add("Value1");
+        control.Columns[0].Selected = true;
+
+        using NoAssertContext context = new();
+
+        DataObject result = control.GetClipboardContent();
+
+        Assert.NotNull(result);
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_RowHeaderSelect_NoSelectedRows_ReturnsNull()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.RowHeaderSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        control.Columns.Add("Column1", "Column1");
+        control.Rows.Add("Value1");
+
+        Assert.Null(control.GetClipboardContent());
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_ColumnHeaderSelect_NoSelectedColumns_ReturnsNull()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.ColumnHeaderSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        DataGridViewTextBoxColumn column = new()
+        {
+            Name = "Column1",
+            HeaderText = "Column1",
+            SortMode = DataGridViewColumnSortMode.Programmatic
+        };
+
+        control.Columns.Add(column);
+        control.Rows.Add("Value1");
+
+        Assert.Null(control.GetClipboardContent());
+    }
+
+    [WinFormsFact]
+    public void DataGridView_GetClipboardContent_FullColumnSelect_NoSelectedColumns_ReturnsNull()
+    {
+        using DataGridView control = new()
+        {
+            SelectionMode = DataGridViewSelectionMode.FullColumnSelect,
+            ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableWithoutHeaderText
+        };
+
+        DataGridViewTextBoxColumn column = new()
+        {
+            Name = "Column1",
+            HeaderText = "Column1",
+            SortMode = DataGridViewColumnSortMode.Programmatic
+        };
+
+        control.Columns.Add(column);
+        control.Rows.Add("Value1");
+
+        Assert.Null(control.GetClipboardContent());
+    }
+
+    [WinFormsTheory]
+    [InlineData(DataGridViewClipboardCopyMode.EnableWithoutHeaderText, true, true, "Value1", "Value1")]
+    [InlineData(DataGridViewClipboardCopyMode.EnableWithAutoHeaderText, true, true, "Row1\tValue1", "Row1,Value1")]
+    [InlineData(DataGridViewClipboardCopyMode.EnableWithAutoHeaderText, false, true, "Value1", "Value1")]
+    [InlineData(DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText, true, true, "\tColumn1\r\nRow1\tValue1", ",Column1\r\nRow1,Value1")]
+    [InlineData(DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText, false, true, "Column1\r\nValue1", "Column1\r\nValue1")]
+    [InlineData(DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText, true, false, "Row1\tValue1", "Row1,Value1")]
+    [InlineData(DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText, false, false, "Value1", "Value1")]
+    public void DataGridView_GetClipboardContent_FullRowSelect_SelectedRow_ReturnsExpectedContent(
+        DataGridViewClipboardCopyMode clipboardCopyMode,
+        bool rowHeadersVisible,
+        bool columnHeadersVisible,
+        string expectedText,
+        string expectedCsv)
+    {
+        using DataGridView control = new()
+        {
+            AllowUserToAddRows = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            ClipboardCopyMode = clipboardCopyMode,
+            RowHeadersVisible = rowHeadersVisible,
+            ColumnHeadersVisible = columnHeadersVisible
+        };
+
+        control.Columns.Add("Column1", "Column1");
+        int rowIndex = control.Rows.Add("Value1");
+        control.Rows[rowIndex].HeaderCell.Value = "Row1";
+        control.Rows.Add("Unselected value");
+
+        Assert.NotEqual(IntPtr.Zero, control.Handle);
+        control.ClearSelection();
+        control.Rows[rowIndex].Selected = true;
+
+        using NoAssertContext context = new();
+
+        DataObject result = control.GetClipboardContent();
+
+        Assert.NotNull(result);
+        Assert.True(result.TryGetData(DataFormats.Text, autoConvert: false, out string text));
+        Assert.Equal(expectedText, text);
+        Assert.True(result.TryGetData(DataFormats.UnicodeText, autoConvert: false, out string unicodeText));
+        Assert.Equal(expectedText, unicodeText);
+        Assert.True(result.TryGetData(DataFormats.CommaSeparatedValue, autoConvert: false, out string csv));
+        Assert.Equal(expectedCsv, csv);
+        Assert.True(result.GetDataPresent(DataFormats.Html, autoConvert: false));
+    }
+
+    [WinFormsFact]
     public void ProcessKeyPreview_HostedChild_ArrowKey_DoesNotRouteToDataGridView()
     {
         using Form form = new();
@@ -4270,5 +4545,210 @@ public partial class DataGridViewTests : IDisposable
             ProcessDataGridViewKeyCalled = true;
             return base.ProcessDataGridViewKey(e);
         }
+
+        public bool SetCurrentCellAddressCorePublic(
+            int columnIndex,
+            int rowIndex,
+            bool setAnchorCellAddress,
+            bool validateCurrentCell,
+            bool throughMouseClick)
+            => SetCurrentCellAddressCore(columnIndex, rowIndex, setAnchorCellAddress, validateCurrentCell, throughMouseClick);
+
+        public void SimulateGotFocus() => OnGotFocus(EventArgs.Empty);
+
+        public void SimulateLostFocus() => OnLostFocus(EventArgs.Empty);
+    }
+
+        // Regression test for https://github.com/dotnet/winforms/issues/6930
+        [WinFormsFact]
+        public void DataGridView_VirtualMode_SetCurrentCellAddressCore_DoesNotUnshareTargetRow()
+        {
+            // Verifies that SetCurrentCellAddressCore (which is the method called from
+            // mouse-click and keyboard-navigation paths) does not unnecessarily unshare
+            // the target row. The fix ensures that AccessibilityNotifyCurrentCellChanged
+            // uses CurrentCellInternal (shared) to check accessibility state before
+            // accessing the public CurrentCell property (which forces row unsharing).
+            using TestDataGridView dgv = new()
+            {
+                VirtualMode = true,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AllowUserToAddRows = false,
+                ShowCellToolTips = false,
+                ColumnHeadersVisible = false,
+                RowHeadersVisible = false,
+                AllowUserToResizeColumns = false,
+                AllowUserToResizeRows = false,
+            };
+
+            dgv.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Col1" });
+            dgv.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Col2" });
+
+            dgv.CellValueNeeded += (sender, e) => e.Value = $"R{e.RowIndex}C{e.ColumnIndex}";
+            dgv.RowCount = 100;
+
+            List<int> unsharedRowIndices = [];
+            dgv.RowUnshared += (sender, e) => unsharedRowIndices.Add(e.Row.Index);
+
+            // Set current cell to row 0 using SetCurrentCellAddressCore directly
+            // (simulating the mouse-click path which passes row/col indices only).
+            dgv.SetCurrentCellAddressCorePublic(0, 0, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+
+            unsharedRowIndices.Clear();
+
+            // Now move current cell to row 5 using SetCurrentCellAddressCore.
+            // Without the fix, AccessibilityNotifyCurrentCellChanged would call
+            // the public CurrentCell getter (which uses Rows[index]) and unshare row 5.
+            dgv.SetCurrentCellAddressCorePublic(0, 5, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+
+            // Verify that row 5 was not unshared.
+            DataGridViewRow row5 = dgv.Rows.SharedRow(5);
+            row5.Index.Should().Be(-1, "Row 5 should remain shared after SetCurrentCellAddressCore when no accessibility objects exist");
+            unsharedRowIndices.Should().NotContain(5, "Row 5 should not have been unshared by SetCurrentCellAddressCore");
+        }
+
+        // Regression test for https://github.com/dotnet/winforms/issues/6930
+        [WinFormsFact]
+        public void DataGridView_VirtualMode_NavigatingMultipleRows_DoesNotCascadeUnsharing()
+        {
+            // Verifies the broader scenario: navigating through multiple rows via
+            // SetCurrentCellAddressCore does not cause a cascade of row unsharing.
+            using TestDataGridView dgv = new()
+            {
+                VirtualMode = true,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AllowUserToAddRows = false,
+                ShowCellToolTips = false,
+                MultiSelect = false,
+            };
+
+            dgv.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "A" });
+
+            dgv.CellValueNeeded += (sender, e) => e.Value = e.RowIndex.ToString();
+            dgv.RowCount = 1000;
+
+            // Navigate to several rows using SetCurrentCellAddressCore
+            dgv.SetCurrentCellAddressCorePublic(0, 0, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+            dgv.SetCurrentCellAddressCorePublic(0, 10, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+            dgv.SetCurrentCellAddressCorePublic(0, 50, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+            dgv.SetCurrentCellAddressCorePublic(0, 100, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+
+            // Check that non-current rows remain shared
+            int sharedCount = 0;
+            for (int i = 0; i < dgv.RowCount; i++)
+            {
+                if (dgv.Rows.SharedRow(i).Index == -1)
+                {
+                    sharedCount++;
+                }
+            }
+
+            // All rows except at most 1 (the previous-current row if it was unshared during leave)
+            // should remain shared. With the fix, the current row itself should also stay shared.
+            sharedCount.Should().BeGreaterThan(995, "Virtually all rows should remain shared after navigating through the grid");
+        }
+
+        // Regression test for https://github.com/dotnet/winforms/issues/6930
+        [WinFormsFact]
+        public void DataGridView_VirtualMode_OnGotFocus_DoesNotUnshareCurrentRow()
+        {
+            // Verifies that OnGotFocus does not unshare the current row by
+            // accessing the public CurrentCell property (which uses Rows[index]).
+            using TestDataGridView dgv = new()
+            {
+                VirtualMode = true,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AllowUserToAddRows = false,
+                ShowCellToolTips = false,
+                ColumnHeadersVisible = false,
+                RowHeadersVisible = false,
+            };
+
+            dgv.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Col1" });
+            dgv.CellValueNeeded += (sender, e) => e.Value = $"R{e.RowIndex}";
+            dgv.RowCount = 100;
+
+            // Set current cell to row 10 without unsharing
+            dgv.SetCurrentCellAddressCorePublic(0, 10, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+
+            List<int> unsharedRowIndices = [];
+            dgv.RowUnshared += (sender, e) => unsharedRowIndices.Add(e.Row.Index);
+
+            // Simulate gaining focus — before the fix this would call CurrentCell getter
+            // which unshares the row via Rows[index].
+            dgv.SimulateGotFocus();
+
+            unsharedRowIndices.Should().NotContain(10, "OnGotFocus should not unshare the current row");
+            dgv.Rows.SharedRow(10).Index.Should().Be(-1, "Row 10 should remain shared after OnGotFocus");
+        }
+
+        // Regression test for https://github.com/dotnet/winforms/issues/6930
+        [WinFormsFact]
+        public void DataGridView_VirtualMode_OnLostFocus_DoesNotUnshareCurrentRow()
+        {
+            // Verifies that OnLostFocus does not unshare the current row by
+            // accessing the public CurrentCell property.
+            using TestDataGridView dgv = new()
+            {
+                VirtualMode = true,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AllowUserToAddRows = false,
+                ShowCellToolTips = false,
+                ColumnHeadersVisible = false,
+                RowHeadersVisible = false,
+            };
+
+            dgv.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Col1" });
+            dgv.CellValueNeeded += (sender, e) => e.Value = $"R{e.RowIndex}";
+            dgv.RowCount = 100;
+
+            // Set current cell to row 20 without unsharing
+            dgv.SetCurrentCellAddressCorePublic(0, 20, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+
+            List<int> unsharedRowIndices = [];
+            dgv.RowUnshared += (sender, e) => unsharedRowIndices.Add(e.Row.Index);
+
+            // Simulate losing focus — before the fix this would call CurrentCell getter.
+            dgv.SimulateLostFocus();
+
+            unsharedRowIndices.Should().NotContain(20, "OnLostFocus should not unshare the current row");
+            dgv.Rows.SharedRow(20).Index.Should().Be(-1, "Row 20 should remain shared after OnLostFocus");
+        }
+
+        // Regression test for https://github.com/dotnet/winforms/issues/6930
+        [WinFormsFact]
+        public void DataGridView_VirtualMode_OnCurrentCellChanged_DoesNotUnshareCurrentRow()
+        {
+            // Verifies that OnCurrentCellChanged does not unshare the current row by
+            // accessing the public CurrentCell property for tooltip/error text checks.
+            using TestDataGridView dgv = new()
+            {
+                VirtualMode = true,
+                ReadOnly = true,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AllowUserToAddRows = false,
+                ShowCellToolTips = true, // Enable tooltips so that the tooltip path is exercised
+                ColumnHeadersVisible = false,
+                RowHeadersVisible = false,
+            };
+
+            dgv.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Col1" });
+            dgv.CellValueNeeded += (sender, e) => e.Value = $"R{e.RowIndex}";
+            dgv.RowCount = 100;
+
+            List<int> unsharedRowIndices = [];
+            dgv.RowUnshared += (sender, e) => unsharedRowIndices.Add(e.Row.Index);
+
+            // Navigate through several rows — OnCurrentCellChanged fires on each move.
+            dgv.SetCurrentCellAddressCorePublic(0, 0, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+            dgv.SetCurrentCellAddressCorePublic(0, 15, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+            dgv.SetCurrentCellAddressCorePublic(0, 30, setAnchorCellAddress: true, validateCurrentCell: false, throughMouseClick: true);
+
+            // Row 30 (current cell) should remain shared
+            dgv.Rows.SharedRow(30).Index.Should().Be(-1, "Current row should remain shared when tooltips are enabled but no error text exists");
+            unsharedRowIndices.Should().NotContain(30, "Row 30 should not have been unshared during navigation");
     }
 }
