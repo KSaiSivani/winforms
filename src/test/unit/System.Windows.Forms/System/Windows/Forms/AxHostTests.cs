@@ -7,7 +7,9 @@ using System.ComponentModel;
 using System.ComponentModel.Design;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms.TestUtilities;
 using Moq;
 using Windows.Win32.System.Com;
@@ -23,6 +25,300 @@ public class AxHostTests
 {
     private const string EmptyClsidString = "00000000-0000-0000-0000-000000000000";
     private const string WebBrowserClsidString = "8856f961-340a-11d0-a96b-00c04fd705a2";
+
+    [Theory]
+    [InlineData("8856f961-340a-11d0-a96b-00c04fd705a2")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void ClsidAttribute_Ctor_PreservesValue(string clsid)
+    {
+        AxHost.ClsidAttribute attribute = new(clsid);
+
+        Assert.Equal(clsid, attribute.Value);
+    }
+
+    [Theory]
+    [InlineData(AxHost.ActiveXInvokeKind.MethodInvoke, "DoWork")]
+    [InlineData(AxHost.ActiveXInvokeKind.MethodInvoke, null)]
+    [InlineData(AxHost.ActiveXInvokeKind.PropertyGet, "Value")]
+    [InlineData(AxHost.ActiveXInvokeKind.PropertyGet, null)]
+    [InlineData(AxHost.ActiveXInvokeKind.PropertySet, "Value")]
+    [InlineData(AxHost.ActiveXInvokeKind.PropertySet, null)]
+    public void InvalidActiveXStateException_ToString_ReturnsExpectedMessage(AxHost.ActiveXInvokeKind kind, string name)
+    {
+        AxHost.InvalidActiveXStateException exception = new(name, kind);
+        string format = kind switch
+        {
+            AxHost.ActiveXInvokeKind.MethodInvoke => SR.AXInvalidMethodInvoke,
+            AxHost.ActiveXInvokeKind.PropertyGet => SR.AXInvalidPropertyGet,
+            AxHost.ActiveXInvokeKind.PropertySet => SR.AXInvalidPropertySet,
+            _ => throw new InvalidOperationException()
+        };
+
+        Assert.Equal(string.Format(format, name), exception.ToString());
+    }
+
+    [Fact]
+    public void InvalidActiveXStateException_DefaultCtor_ReturnsMethodInvokeMessage()
+    {
+        AxHost.InvalidActiveXStateException exception = new();
+
+        Assert.Equal(string.Format(SR.AXInvalidMethodInvoke, (object)null), exception.ToString());
+    }
+
+    [Fact]
+    public void InvalidActiveXStateException_UnknownKind_UsesExceptionToString()
+    {
+        AxHost.InvalidActiveXStateException exception = new("DoWork", (AxHost.ActiveXInvokeKind)(-1));
+
+        Assert.Equal($"{exception.GetType().FullName}: {exception.Message}", exception.ToString());
+    }
+
+    [Theory]
+    [InlineData(typeof(byte[]), true)]
+    [InlineData(typeof(int), false)]
+    public void StateConverter_CanConvertFrom_ReturnsExpected(Type sourceType, bool expected)
+    {
+        AxHost.StateConverter converter = new();
+
+        Assert.Equal(expected, converter.CanConvertFrom(sourceType));
+    }
+
+    [Theory]
+    [InlineData(typeof(byte[]), true)]
+    [InlineData(typeof(string), true)]
+    [InlineData(typeof(int), false)]
+    public void StateConverter_CanConvertTo_ReturnsExpected(Type destinationType, bool expected)
+    {
+        AxHost.StateConverter converter = new();
+
+        Assert.Equal(expected, converter.CanConvertTo(destinationType));
+    }
+
+    [Fact]
+    public void StateConverter_ConvertToNull_ReturnsEmptyByteArray()
+    {
+        AxHost.StateConverter converter = new();
+
+        Assert.Empty(Assert.IsType<byte[]>(converter.ConvertTo(null, typeof(byte[]))));
+    }
+
+    [Theory]
+    [InlineData(0, false, null)]
+    [InlineData(1, true, "license")]
+    [InlineData(2, false, "")]
+    public void StateConverter_RoundTrip_PreservesState(int storageType, bool manualUpdate, string licenseKey)
+    {
+        byte[] payload = [10, 20, 30];
+        using MemoryStream source = new();
+        using (BinaryWriter writer = new(source, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(payload.Length);
+            writer.Write(payload);
+        }
+
+        source.Position = 0;
+        using AxHost.State state = new(source, storageType, manualUpdate, licenseKey);
+        AxHost.StateConverter converter = new();
+
+        byte[] serialized = Assert.IsType<byte[]>(converter.ConvertTo(state, typeof(byte[])));
+        using AxHost.State restored = Assert.IsType<AxHost.State>(converter.ConvertFrom(serialized));
+
+        Assert.Equal(state.Type, restored.Type);
+        Assert.Equal(manualUpdate, restored.ManualUpdate);
+        Assert.Equal(string.IsNullOrEmpty(licenseKey) ? null : licenseKey, restored.LicenseKey);
+        Assert.Equal(serialized, Assert.IsType<byte[]>(converter.ConvertTo(restored, typeof(byte[]))));
+
+        using BinaryReader reader = new(new MemoryStream(serialized));
+        Assert.Equal(storageType, reader.ReadInt32());
+        Assert.Equal(1, reader.ReadInt32());
+        Assert.Equal(manualUpdate, reader.ReadBoolean());
+        Assert.Equal(licenseKey ?? string.Empty, new string(reader.ReadChars(reader.ReadInt32())));
+        Assert.Equal(0, reader.ReadInt32());
+        Assert.Equal(payload.Length, reader.ReadInt32());
+        Assert.Equal(payload, reader.ReadBytes(payload.Length));
+        Assert.Equal(reader.BaseStream.Length, reader.BaseStream.Position);
+    }
+
+    [Fact]
+    public void StateConverter_ConvertToNullDestination_ThrowsArgumentNullException()
+    {
+        AxHost.StateConverter converter = new();
+
+        Assert.Throws<ArgumentNullException>("destinationType", () => converter.ConvertTo(null, null));
+    }
+
+    [Fact]
+    public void StateConverter_UnsupportedConversions_ThrowNotSupportedException()
+    {
+        AxHost.StateConverter converter = new();
+
+        Assert.Throws<NotSupportedException>(() => converter.ConvertFrom(42));
+        Assert.Throws<NotSupportedException>(() => converter.ConvertTo(new object(), typeof(byte[])));
+        Assert.Throws<NotSupportedException>(() => converter.ConvertTo(new object(), typeof(int)));
+    }
+
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("de-DE")]
+    [InlineData("fr-FR")]
+    public void TypeLibraryTimeStampAttribute_Ctor_UsesInvariantCulture(string cultureName)
+    {
+        CultureInfo originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(cultureName);
+            AxHost.TypeLibraryTimeStampAttribute attribute = new("01/30/2024 13:45:00");
+
+            Assert.Equal(new DateTime(2024, 1, 30, 13, 45, 0), attribute.Value);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not a timestamp")]
+    public void TypeLibraryTimeStampAttribute_InvalidTimestamp_ThrowsFormatException(string timestamp)
+    {
+        Assert.Throws<FormatException>(() => new AxHost.TypeLibraryTimeStampAttribute(timestamp));
+    }
+
+    [Fact]
+    public void TypeLibraryTimeStampAttribute_NullTimestamp_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => new AxHost.TypeLibraryTimeStampAttribute(null));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public unsafe void EnumUnknown_Next_ReturnsSuccessiveElementsThenExhaustion(bool includeNulls)
+    {
+        object first = new();
+        object second = new();
+        object[] items = includeNulls ? [null, first, null, second, null] : [first, second];
+        IEnumUnknown.Interface enumerator = new AxHost.EnumUnknown(items);
+
+        foreach (object expected in new[] { first, second })
+        {
+            using ComScope<IUnknown> fetched = new(null);
+            uint count = 0;
+
+            Assert.Equal(HRESULT.S_OK, enumerator.Next(1, fetched, &count));
+            Assert.Equal(1u, count);
+            Assert.True(ComHelpers.TryGetObjectForIUnknown(fetched.Value, out object actual));
+            Assert.Same(expected, actual);
+        }
+
+        using ComScope<IUnknown> exhausted = new(null);
+        uint fetchedCount = 1;
+        Assert.Equal(HRESULT.S_FALSE, enumerator.Next(1, exhausted, &fetchedCount));
+        Assert.Equal(0u, fetchedCount);
+        Assert.True(exhausted.IsNull);
+    }
+
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(1u)]
+    [InlineData(2u)]
+    [InlineData(3u)]
+    public unsafe void EnumUnknown_Next_BatchFillsDistinctSlots(uint requested)
+    {
+        object[] items = [new(), new()];
+        IEnumUnknown.Interface enumerator = new AxHost.EnumUnknown(items);
+        IUnknown** fetched = stackalloc IUnknown*[3] { null, null, null };
+        uint fetchedCount = uint.MaxValue;
+        uint expectedCount = Math.Min(requested, (uint)items.Length);
+        try
+        {
+            HRESULT result = enumerator.Next(requested, fetched, &fetchedCount);
+
+            Assert.Equal(requested <= items.Length ? HRESULT.S_OK : HRESULT.S_FALSE, result);
+            Assert.Equal(expectedCount, fetchedCount);
+            for (int i = 0; i < expectedCount; i++)
+            {
+                Assert.True(ComHelpers.TryGetObjectForIUnknown(fetched[i], out object actual));
+                Assert.Same(items[i], actual);
+            }
+
+            for (uint i = expectedCount; i < 3; i++)
+            {
+                Assert.True(fetched[i] is null);
+            }
+        }
+        finally
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if (fetched[i] is not null)
+                {
+                    fetched[i]->Release();
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public unsafe void EnumUnknown_Next_NullOutput_ReturnsEPointer()
+    {
+        IEnumUnknown.Interface enumerator = new AxHost.EnumUnknown([new()]);
+        uint fetchedCount = 0;
+
+        Assert.Equal(HRESULT.E_POINTER, enumerator.Next(1, null, &fetchedCount));
+    }
+
+    [Fact]
+    public unsafe void EnumUnknown_Next_NullFetchedCount_ReturnsElement()
+    {
+        object item = new();
+        IEnumUnknown.Interface enumerator = new AxHost.EnumUnknown([item]);
+        using ComScope<IUnknown> fetched = new(null);
+
+        Assert.Equal(HRESULT.S_OK, enumerator.Next(1, fetched, null));
+        Assert.True(ComHelpers.TryGetObjectForIUnknown(fetched.Value, out object actual));
+        Assert.Same(item, actual);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public unsafe void EnumUnknown_Next_EmptyInput_ReturnsSFalse(bool nullArray)
+    {
+        IEnumUnknown.Interface enumerator = new AxHost.EnumUnknown(nullArray ? null : []);
+        using ComScope<IUnknown> fetched = new(null);
+        uint fetchedCount = 1;
+
+        Assert.Equal(HRESULT.S_FALSE, enumerator.Next(1, fetched, &fetchedCount));
+        Assert.Equal(0u, fetchedCount);
+        Assert.True(fetched.IsNull);
+    }
+
+    [WinFormsFact]
+    public void AxHost_WmDestroy_ForwardsToPreviousWindowProcedure()
+    {
+        using SubAxHost control = new(EmptyClsidString);
+        DestroyTrackingNativeWindow window = new();
+        window.CreateHandle(new CreateParams());
+        try
+        {
+            control.WindowAssignHandle((HWND)window.Handle, value: false);
+            Assert.True(control.IsHandleCreated);
+            Assert.Equal(0, window.DestroyCount);
+
+            window.DestroyHandle();
+
+            Assert.Equal(1, window.DestroyCount);
+            Assert.False(control.IsHandleCreated);
+        }
+        finally
+        {
+            control.WindowReleaseHandle();
+            window.DestroyHandle();
+        }
+    }
 
     [WinFormsTheory]
     [InlineData(EmptyClsidString)]
@@ -3500,6 +3796,24 @@ public class AxHostTests
             DisposeHelper.NullAndRelease(ref _font);
             DisposeHelper.NullAndRelease(ref _clientSite);
             DisposeHelper.NullAndRelease(ref _propertyNotifySink);
+        }
+    }
+
+    /// <summary>
+    ///  Observes destruction in the window procedure underneath the AxHost subclass.
+    /// </summary>
+    private class DestroyTrackingNativeWindow : NativeWindow
+    {
+        public int DestroyCount { get; private set; }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == PInvokeCore.WM_DESTROY)
+            {
+                DestroyCount++;
+            }
+
+            base.WndProc(ref m);
         }
     }
 
