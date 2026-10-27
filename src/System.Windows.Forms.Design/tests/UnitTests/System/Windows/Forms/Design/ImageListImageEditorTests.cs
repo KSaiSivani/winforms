@@ -3,6 +3,7 @@
 
 #nullable disable
 
+using System.Collections;
 using System.Drawing;
 using System.Drawing.Imaging;
 
@@ -10,6 +11,20 @@ namespace System.Windows.Forms.Design.Tests;
 
 public class ImageListImageEditorTests
 {
+    [Theory]
+    [BoolData]
+    public void ImageCollectionEditor_GetObjectsFromInstance_PreservesImageList(bool useGenericList)
+    {
+        ImageCollectionEditor editor = new(typeof(ImageList.ImageCollection));
+        var getObjectsFromInstance = editor.TestAccessor.CreateDelegate<Func<object, IList>>("GetObjectsFromInstance");
+        using Bitmap bitmap = new(10, 10);
+        ImageListImage image = new(bitmap);
+        IList images = useGenericList ? new List<ImageListImage> { image } : new ArrayList { image };
+
+        Assert.Same(images, getObjectsFromInstance(images));
+        Assert.Same(image, Assert.Single(images));
+    }
+
     [Fact]
     public void ImageListImageEditor_LoadImageFromStream_BitmapStream_ReturnsExpected()
     {

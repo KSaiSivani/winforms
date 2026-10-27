@@ -1,7 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Collections;
 using System.ComponentModel.Design;
 using System.Drawing;
 using Moq;
@@ -146,7 +145,7 @@ public class ToolStripDesignerUtilsTests : IDisposable
     [Fact]
     public void InvalidateSelection_InvokesInvalidate()
     {
-        ArrayList originalSelComps = [_toolStripButton];
+        List<object> originalSelComps = [_toolStripButton];
         using ToolStripButton nextSelection = new();
         Mock<IServiceProvider> mockServiceProvider = new();
 

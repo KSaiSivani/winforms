@@ -2024,7 +2024,7 @@ internal class ToolStripKeyboardHandlingService
             // Cache original selection
             ICollection originalSelComps = selSvc.GetSelectedComponents();
             // Add the TemplateNode to the Selection if it is currently Selected as the GetSelectedComponents won't do it for us.
-            ArrayList origSel = new(originalSelComps);
+            List<object> origSel = [.. originalSelComps.Cast<object>()];
             if (origSel.Count == 0)
             {
                 if (SelectedDesignerControl is not null)

@@ -4,9 +4,11 @@
 using System.Collections;
 using System.ComponentModel;
 using System.ComponentModel.Design;
+using System.Windows.Forms.Design.Behavior;
 using Moq;
 
 namespace System.Windows.Forms.Design.Tests;
+20
 public sealed class SplitterPanelDesignerTests
 {
     [Fact]
@@ -52,8 +54,9 @@ public sealed class SplitterPanelDesignerTests
 
         IList snapLines = splitterPanelDesigner.SnapLines;
         snapLines.Should().NotBeNull();
-        snapLines.Should().BeOfType<ArrayList>();
-        snapLines.Count.Should().BeGreaterThan(0);
+        snapLines.Should().BeOfType<List<SnapLine>>();
+        snapLines.Cast<SnapLine>().Select(line => line.Filter).Should().Equal(
+            SnapLine.PaddingLeft, SnapLine.PaddingRight, SnapLine.PaddingTop, SnapLine.PaddingBottom);
 
         SelectionRules selectionRules = splitterPanelDesigner.SelectionRules;
         selectionRules.Should().Be(SelectionRules.None);

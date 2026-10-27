@@ -46,7 +46,9 @@ public class ToolStripDesignerTests
         toolStrip.Items.Add("123");
         toolStrip.Items.Add("abc");
 
-        Assert.Equal(2, toolStripDesigner.AssociatedComponents.Count);
+        Assert.Equal(
+            toolStrip.Items.Cast<ToolStripItem>(),
+            Assert.IsType<List<ToolStripItem>>(toolStripDesigner.AssociatedComponents));
         Assert.Equal(2, toolStripDesigner.ActionLists.Count);
         Assert.False(toolStripDesigner.CacheItems);
         Assert.False(toolStripDesigner.DontCloseOverflow);
@@ -63,6 +65,10 @@ public class ToolStripDesignerTests
         Assert.Equal(-1, toolStripDesigner.IndexOfItemUnderMouseToDrag);
         Assert.Null(toolStripDesigner.InsertTransaction);
         Assert.Empty(toolStripDesigner.Items);
+        List<ToolStripItem> cachedItems = Assert.IsType<List<ToolStripItem>>(toolStripDesigner.Items);
+        cachedItems.Add(toolStrip.Items[0]);
+        Assert.Same(cachedItems, toolStripDesigner.Items);
+        Assert.Same(toolStrip.Items[0], Assert.Single(toolStripDesigner.Items));
         Assert.Null(toolStripDesigner.NewItemTransaction);
         Assert.NotNull(toolStripDesigner.SelectionService);
         Assert.True(toolStripDesigner.SerializePerformLayout);

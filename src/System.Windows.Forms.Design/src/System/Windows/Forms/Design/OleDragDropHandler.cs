@@ -1037,12 +1037,7 @@ internal partial class OleDragDropHandler
     private static object[] GetTopLevelComponents(ICollection comps)
     {
         // Filter the top-level components.
-        if (comps is not IList)
-        {
-            comps = new ArrayList(comps);
-        }
-
-        IList compList = (IList)comps;
+        IList compList = comps as IList ?? comps.Cast<object>().ToList();
         List<object> topLevel = [];
         foreach (object comp in compList)
         {

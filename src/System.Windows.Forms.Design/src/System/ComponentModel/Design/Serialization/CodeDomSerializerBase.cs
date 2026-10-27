@@ -957,11 +957,11 @@ public abstract partial class CodeDomSerializerBase
                 {
                     if (arrayCreateEx.Initializers.Count > 0)
                     {
-                        // Passed an array of initializers. Use this to create the array. Note that we use an ArrayList
+                        // Passed an array of initializers. Use this to create the array. Note that we use a List
                         // here and add elements as we create them. It is possible that an element cannot be resolved.
                         // This is an error, but we do not want to tank the entire array. If we kicked out the entire
                         // statement, a missing control would cause all controls on a form to vanish.
-                        ArrayList arrayList = new(arrayCreateEx.Initializers.Count);
+                        List<object?> arrayList = new(arrayCreateEx.Initializers.Count);
 
                         foreach (CodeExpression initializer in arrayCreateEx.Initializers)
                         {
@@ -986,7 +986,7 @@ public abstract partial class CodeDomSerializerBase
                         }
 
                         array = Array.CreateInstance(arrayType, arrayList.Count);
-                        arrayList.CopyTo(array, 0);
+                        ((ICollection)arrayList).CopyTo(array, 0);
                     }
                     else if (arrayCreateEx.SizeExpression is not null)
                     {

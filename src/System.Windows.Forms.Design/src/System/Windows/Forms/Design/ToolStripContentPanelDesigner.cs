@@ -4,6 +4,7 @@
 using System.Collections;
 using System.ComponentModel;
 using System.ComponentModel.Design;
+using System.Windows.Forms.Design.Behavior;
 
 namespace System.Windows.Forms.Design;
 
@@ -42,9 +43,9 @@ internal class ToolStripContentPanelDesigner : PanelDesigner
         get
         {
             // We don't want margin snap lines, so call directly to the internal method.
-            ArrayList? snapLines = null;
+            IList<SnapLine> snapLines = new List<SnapLine>(4);
             AddPaddingSnapLines(ref snapLines);
-            return snapLines;
+            return snapLines.Unwrap();
         }
     }
 

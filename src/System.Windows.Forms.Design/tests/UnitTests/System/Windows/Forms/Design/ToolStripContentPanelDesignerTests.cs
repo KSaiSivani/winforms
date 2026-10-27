@@ -26,9 +26,7 @@ public sealed class ToolStripContentPanelDesignerTests : IDisposable
     [Fact]
     public void SnapLines_ShouldReturnNonNullList()
     {
-        IList<SnapLine> snapLines = _toolStripContentPanelDesigner.SnapLines.Cast<SnapLine>().ToList();
-
-        snapLines.Should().NotBeNull();
+        Assert.IsType<List<SnapLine>>(_toolStripContentPanelDesigner.SnapLines);
     }
 
     [Fact]

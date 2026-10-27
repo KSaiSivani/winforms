@@ -228,6 +228,11 @@ public class FontUnitConverterTest
         {
             Assert.NotEqual(GraphicsUnit.Display, item);
         }
+
+        Assert.Equal(
+            new[] { GraphicsUnit.World, GraphicsUnit.Pixel, GraphicsUnit.Point, GraphicsUnit.Inch, GraphicsUnit.Document, GraphicsUnit.Millimeter },
+            values.Cast<GraphicsUnit>());
+        Assert.Same(values, converter.GetStandardValues());
     }
 
     [Theory]

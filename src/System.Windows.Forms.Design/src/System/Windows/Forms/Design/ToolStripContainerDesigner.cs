@@ -147,7 +147,7 @@ internal class ToolStripContainerDesigner : ParentControlDesigner
     {
         get
         {
-            ArrayList components = [];
+            List<Control> components = [];
             foreach (Control parent in _toolStripContainer!.Controls)
             {
                 foreach (Control control in parent.Controls)

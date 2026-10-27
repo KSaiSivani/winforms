@@ -443,7 +443,7 @@ public class DesignSurface : IDisposable, IServiceProvider
             IComponent? rootComponent = ((IDesignerHost)_host).RootComponent;
             if (rootComponent is null)
             {
-                ArrayList newErrors = [];
+                List<object?> newErrors = [];
                 Exception ex = new InvalidOperationException(SR.DesignSurfaceNoRootComponent)
                 {
                     HelpLink = SR.DesignSurfaceNoRootComponent
@@ -451,7 +451,7 @@ public class DesignSurface : IDisposable, IServiceProvider
                 newErrors.Add(ex);
                 if (errors is not null)
                 {
-                    newErrors.AddRange(errors);
+                    newErrors.AddRange(errors.Cast<object?>());
                 }
 
                 errors = newErrors;

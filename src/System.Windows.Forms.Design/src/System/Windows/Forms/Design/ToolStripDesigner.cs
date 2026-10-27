@@ -50,7 +50,7 @@ internal class ToolStripDesigner : ControlDesigner
     private ContextMenuStrip _toolStripContextMenu;
     private bool _toolStripSelected;
     private bool _cacheItems; // ToolStripDesigner would cache items for the MenuItem when dropdown is changed.
-    private ArrayList _items; // cached Items.
+    private List<ToolStripItem> _items; // cached Items.
     private bool _disposed;
     private DesignerTransaction _newItemTransaction;
     private bool _fireSyncSelection; // fires SyncSelection when we toggle the items visibility to add the glyphs after the item gets visible.
@@ -144,7 +144,7 @@ internal class ToolStripDesigner : ControlDesigner
     {
         get
         {
-            ArrayList items = [];
+            List<ToolStripItem> items = [];
             foreach (ToolStripItem item in ToolStrip.Items)
             {
                 if (item is not DesignerToolStripControlHost)
@@ -338,7 +338,7 @@ internal class ToolStripDesigner : ControlDesigner
     ///  Main MenuStripDesigners Items collection and later are moved to to the appropriate ToolStripMenuItem.
     ///  This is the Items Collection.
     /// </summary>
-    public ArrayList Items
+    public List<ToolStripItem> Items
     {
         get
         {

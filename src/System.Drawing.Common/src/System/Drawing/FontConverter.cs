@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.ComponentModel.Design.Serialization;
 using System.Drawing.Text;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace System.Drawing;
@@ -479,7 +480,7 @@ public class FontConverter : TypeConverter
             {
                 base.GetStandardValues(context); // sets "values"
                 Debug.Assert(Values is not null);
-                ArrayList filteredValues = new(Values);
+                List<GraphicsUnit> filteredValues = [.. Values.Cast<GraphicsUnit>()];
                 filteredValues.Remove(GraphicsUnit.Display);
                 Values = new StandardValuesCollection(filteredValues);
             }

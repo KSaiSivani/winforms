@@ -61,6 +61,24 @@ public class ToolStripContainerDesignerTests : IDisposable
     public void AssociatedComponents_ShouldNotBeNull() => _designer.AssociatedComponents.Should().NotBeNull();
 
     [Fact]
+    public void AssociatedComponents_ReturnsTypedListInControlOrder()
+    {
+        using Button button = new();
+        using Label label = new();
+        using ToolStrip toolStrip = new();
+        _toolStripContainer.ContentPanel.Controls.Add(button);
+        _toolStripContainer.ContentPanel.Controls.Add(label);
+        _toolStripContainer.TopToolStripPanel.Controls.Add(toolStrip);
+
+        List<Control> components = Assert.IsType<List<Control>>(_designer.AssociatedComponents);
+
+        Assert.Equal(
+            _toolStripContainer.Controls.Cast<Control>().SelectMany(panel => panel.Controls.Cast<Control>()),
+            components);
+        Assert.Equal(3, components.Count);
+    }
+
+    [Fact]
     public void CanParent_ShouldReturnFalse()
     {
         using Control control = new();

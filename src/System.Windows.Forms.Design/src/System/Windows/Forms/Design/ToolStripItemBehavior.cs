@@ -301,7 +301,7 @@ internal class ToolStripItemBehavior : Behavior.Behavior
         }
 
         // Add the TemplateNode to the Selection if it is currently Selected as the GetSelectedComponents won't do it for us.
-        ArrayList origSel = new(originalSelComps);
+        List<object> origSel = [.. originalSelComps.Cast<object>()];
         if (origSel.Count == 0)
         {
             if (keyService is not null && keyService.SelectedDesignerControl is not null)

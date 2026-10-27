@@ -1,6 +1,7 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Collections;
 using System.ComponentModel;
 using System.ComponentModel.Design;
 using System.Drawing.Design;
@@ -173,6 +174,23 @@ public class OleDragDropHandlerTests : IDisposable
     public void GetDraggingObjects_ShouldReturnNull_WhenDataObjectIsNull()
     {
         OleDragDropHandler.GetDraggingObjects((IDataObject?)null).Should().BeNull();
+    }
+
+    [WinFormsTheory]
+    [BoolData]
+    public void GetTopLevelComponents_PreservesOrderAndFiltersChildren(bool useNonListCollection)
+    {
+        using Control parent = new();
+        using Control child = new() { Parent = parent };
+        using Control standalone = new();
+        object?[] components = [child, parent, standalone, _component, null];
+        ICollection collection = useNonListCollection ? new Queue<object?>(components) : components;
+        var getTopLevelComponents = _oleDragDropHandler.TestAccessor.CreateDelegate<Func<ICollection, object[]>>("GetTopLevelComponents");
+
+        object[] result = getTopLevelComponents(collection);
+
+        Assert.Equal(new object[] { parent, standalone, _component }, result);
+        Assert.Equal(components, collection.Cast<object?>());
     }
 
     [Fact]

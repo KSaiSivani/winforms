@@ -3,7 +3,6 @@
 
 #nullable disable
 
-using System.Collections;
 using System.Drawing;
 using System.Windows.Forms.Design.Behavior;
 
@@ -17,7 +16,7 @@ internal sealed class ToolStripAdornerWindowService : IDisposable
     private readonly ToolStripAdornerWindow _toolStripAdornerWindow; // the transparent window all glyphs are drawn to
     private BehaviorService _behaviorService;
     private Adorner _dropDownAdorner;
-    private ArrayList _dropDownCollection;
+    private List<ToolStripDropDown> _dropDownCollection;
     private readonly IOverlayService _overlayService;
 
     /// <summary>
@@ -130,7 +129,7 @@ internal sealed class ToolStripAdornerWindowService : IDisposable
         _toolStripAdornerWindow.InvalidateAdornerWindow(r);
     }
 
-    internal ArrayList DropDowns
+    internal List<ToolStripDropDown> DropDowns
     {
         get => _dropDownCollection;
         set

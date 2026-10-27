@@ -26,7 +26,7 @@ internal sealed class ToolStripDesignerUtils
     // Used to cache in the selection. This is used when the selection is changing and we need to invalidate
     // the original selection Especially, when the selection is changed through NON UI designer action like
     // through propertyGrid or through Doc Outline.
-    public static ArrayList s_originalSelComps;
+    public static List<object> s_originalSelComps;
 
     [ThreadStatic]
     private static Dictionary<Type, Bitmap> t_cachedWinformsImages;
@@ -418,7 +418,7 @@ internal sealed class ToolStripDesignerUtils
         contextMenu.Populate();
     }
 
-    public static void InvalidateSelection(ArrayList originalSelComps, ToolStripItem nextSelection, IServiceProvider provider, bool shiftPressed)
+    public static void InvalidateSelection(List<object> originalSelComps, ToolStripItem nextSelection, IServiceProvider provider, bool shiftPressed)
     {
         // if we are not selecting a ToolStripItem then return (don't invalidate).
         if (nextSelection is null || provider is null)

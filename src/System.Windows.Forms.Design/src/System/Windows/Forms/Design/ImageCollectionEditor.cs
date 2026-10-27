@@ -81,9 +81,9 @@ internal class ImageCollectionEditor : CollectionEditor
     /// <summary>
     ///  Gets images from the given array.
     /// </summary>
-    /// <param name="array">The input is an <see cref="ArrayList"/> as an object.</param>
-    /// <returns>An <see cref="ArrayList"/> which contains individual images that need to be created.</returns>
-    protected override IList GetObjectsFromInstance(object array) => array as ArrayList;
+    /// <param name="array">The input is an <see cref="IList"/> as an object.</param>
+    /// <returns>An <see cref="IList"/> which contains individual images that need to be created.</returns>
+    protected override IList GetObjectsFromInstance(object array) => array as IList;
 
     protected override object[] GetItems(object editValue)
     {
