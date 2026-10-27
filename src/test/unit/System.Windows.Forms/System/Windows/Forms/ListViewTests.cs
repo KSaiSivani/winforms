@@ -900,6 +900,34 @@ public class ListViewTests
         Assert.False(listView.IsHandleCreated);
     }
 
+    [WinFormsFact]
+    public void ListView_CheckBoxes_SetWithHandle_PreservesStateImages()
+    {
+        using Bitmap image1 = new(16, 16);
+        using Bitmap image2 = new(16, 16);
+        using Bitmap image3 = new(16, 16);
+        using ImageList stateImageList = new();
+        stateImageList.Images.AddRange([image1, image2, image3]);
+        using ListView listView = new()
+        {
+            UseCompatibleStateImageBehavior = false,
+            View = View.Details,
+            StateImageList = stateImageList
+        };
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+        Assert.Equal(3, stateImageList.Images.Count);
+
+        listView.CheckBoxes = true;
+        Assert.Same(stateImageList, listView.StateImageList);
+        Assert.Equal(3, stateImageList.Images.Count);
+
+        listView.CheckBoxes = false;
+        Assert.Equal(3, stateImageList.Images.Count);
+
+        listView.CheckBoxes = true;
+        Assert.Equal(3, stateImageList.Images.Count);
+    }
+
     public static IEnumerable<object[]> CheckBoxes_SetWithHandle_TestData()
     {
         foreach (ListViewAlignment alignment in Enum.GetValues(typeof(ListViewAlignment)))
@@ -927,28 +955,36 @@ public class ListViewTests
                 yield return new object[] { false, View.List, alignment, null, false, 0, 0, 1, 1 };
                 yield return new object[] { false, View.SmallIcon, alignment, null, false, 0, 0, 2, 1 };
 
-                yield return new object[] { false, View.Details, alignment, new ImageList(), true, 1, 0, 2, 1 };
+                yield return new object[] { false, View.Details, alignment, new ImageList(), true, 1, 1, 2, 2 };
                 yield return new object[] { false, View.LargeIcon, alignment, new ImageList(), true, 2, 1, 4, 2 };
                 yield return new object[] { false, View.List, alignment, new ImageList(), true, 1, 1, 2, 2 };
                 yield return new object[] { false, View.SmallIcon, alignment, new ImageList(), true, 2, 1, 4, 2 };
-                yield return new object[] { false, View.Details, alignment, new ImageList(), false, 0, 0, 1, 0 };
+                yield return new object[] { false, View.Details, alignment, new ImageList(), false, 0, 0, 1, 1 };
                 yield return new object[] { false, View.LargeIcon, alignment, new ImageList(), false, 0, 0, 2, 1 };
                 yield return new object[] { false, View.List, alignment, new ImageList(), false, 0, 0, 1, 1 };
                 yield return new object[] { false, View.SmallIcon, alignment, new ImageList(), false, 0, 0, 2, 1 };
             }
         }
 
-        foreach (Func<ImageList> imageListFactory in new Func<ImageList>[] { () => new ImageList(), () => null })
-        {
-            yield return new object[] { false, View.Details, ListViewAlignment.Left, imageListFactory(), true, 1, 0, 2, 1 };
-            yield return new object[] { false, View.LargeIcon, ListViewAlignment.Left, imageListFactory(), true, 2, 1, 4, 2 };
-            yield return new object[] { false, View.List, ListViewAlignment.Left, imageListFactory(), true, 1, 1, 2, 2 };
-            yield return new object[] { false, View.SmallIcon, ListViewAlignment.Left, imageListFactory(), true, 2, 1, 4, 2 };
-            yield return new object[] { false, View.Details, ListViewAlignment.Left, imageListFactory(), false, 0, 0, 1, 0 };
-            yield return new object[] { false, View.LargeIcon, ListViewAlignment.Left, imageListFactory(), false, 0, 0, 2, 1 };
-            yield return new object[] { false, View.List, ListViewAlignment.Left, imageListFactory(), false, 0, 0, 1, 1 };
-            yield return new object[] { false, View.SmallIcon, ListViewAlignment.Left, imageListFactory(), false, 0, 0, 2, 1 };
-        }
+        // With StateImageList: handle recreation occurs both when enabling and disabling CheckBoxes
+        yield return new object[] { false, View.Details, ListViewAlignment.Left, new ImageList(), true, 1, 1, 2, 2 };
+        yield return new object[] { false, View.LargeIcon, ListViewAlignment.Left, new ImageList(), true, 2, 1, 4, 2 };
+        yield return new object[] { false, View.List, ListViewAlignment.Left, new ImageList(), true, 1, 1, 2, 2 };
+        yield return new object[] { false, View.SmallIcon, ListViewAlignment.Left, new ImageList(), true, 2, 1, 4, 2 };
+        yield return new object[] { false, View.Details, ListViewAlignment.Left, new ImageList(), false, 0, 0, 1, 1 };
+        yield return new object[] { false, View.LargeIcon, ListViewAlignment.Left, new ImageList(), false, 0, 0, 2, 1 };
+        yield return new object[] { false, View.List, ListViewAlignment.Left, new ImageList(), false, 0, 0, 1, 1 };
+        yield return new object[] { false, View.SmallIcon, ListViewAlignment.Left, new ImageList(), false, 0, 0, 2, 1 };
+
+        // Without a StateImageList, only the alignment/view-specific conditions drive handle recreation.
+        yield return new object[] { false, View.Details, ListViewAlignment.Left, null, true, 1, 0, 2, 1 };
+        yield return new object[] { false, View.LargeIcon, ListViewAlignment.Left, null, true, 2, 1, 4, 2 };
+        yield return new object[] { false, View.List, ListViewAlignment.Left, null, true, 1, 1, 2, 2 };
+        yield return new object[] { false, View.SmallIcon, ListViewAlignment.Left, null, true, 2, 1, 4, 2 };
+        yield return new object[] { false, View.Details, ListViewAlignment.Left, null, false, 0, 0, 1, 0 };
+        yield return new object[] { false, View.LargeIcon, ListViewAlignment.Left, null, false, 0, 0, 2, 1 };
+        yield return new object[] { false, View.List, ListViewAlignment.Left, null, false, 0, 0, 1, 1 };
+        yield return new object[] { false, View.SmallIcon, ListViewAlignment.Left, null, false, 0, 0, 2, 1 };
     }
 
     [WinFormsTheory]
@@ -6019,26 +6055,48 @@ public class ListViewTests
     }
 
     [WinFormsFact]
-    public void ListView_ColumnDropDownClicked_AddRemoveHandler_RaisesExpected()
+    public void ListView_ColumnDropDownClicked_Notify_RaisesExpected()
     {
-        using SubListView listView = new();
-        ColumnDropDownClickEventArgs expected = new(1, new Point(10, 20));
+        using ListView listView = new()
+        {
+            View = View.Details
+        };
+        using ColumnHeader header = new()
+        {
+            SplitButton = true,
+            Width = 100
+        };
+        listView.Columns.Add(header);
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+        HWND headerHandle = (HWND)PInvokeCore.SendMessage(listView, PInvoke.LVM_GETHEADER);
+        RECT dropDownRect = default;
+        Assert.NotEqual(IntPtr.Zero, PInvokeCore.SendMessage(headerHandle, PInvoke.HDM_GETITEMDROPDOWNRECT, 0, ref dropDownRect));
+        Point expectedLocation = new(dropDownRect.left, dropDownRect.bottom);
+        Assert.True(PInvoke.ClientToScreen(headerHandle, ref expectedLocation));
         int callCount = 0;
-
         EventHandler<ColumnDropDownClickEventArgs> handler = (sender, e) =>
         {
-            sender.Should().BeSameAs(listView);
-            e.Should().BeSameAs(expected);
+            Assert.Same(listView, sender);
+            Assert.Equal(0, e.Column);
+            Assert.Equal(expectedLocation, e.ScreenLocation);
             callCount++;
+        };
+        NMHEADERW notification = new()
+        {
+            hdr = new NMHDR
+            {
+                hwndFrom = headerHandle,
+                code = PInvoke.HDN_DROPDOWN
+            }
         };
 
         listView.ColumnDropDownClicked += handler;
-        listView.TestAccessor.Dynamic.OnColumnDropDownClicked(expected);
-        callCount.Should().Be(1);
+        PInvokeCore.SendMessage(listView, PInvokeCore.WM_NOTIFY, 0, ref notification);
+        Assert.Equal(1, callCount);
 
         listView.ColumnDropDownClicked -= handler;
-        listView.TestAccessor.Dynamic.OnColumnDropDownClicked(expected);
-        callCount.Should().Be(1);
+        PInvokeCore.SendMessage(listView, PInvokeCore.WM_NOTIFY, 0, ref notification);
+        Assert.Equal(1, callCount);
     }
 
     [WinFormsFact]
@@ -6087,6 +6145,69 @@ public class ListViewTests
 
         // Expect callCount to remain 4 because no handlers should be called.
         callCount.Should().Be(4);
+    }
+
+    [WinFormsTheory]
+    [InlineData(0x1E, 0x1E, 0x1E, 0xFF, 0xFF, 0xFF)]  // Dark mode: dark bg, white text
+    [InlineData(0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00)]  // Light mode: white bg, black text
+    public void ListView_WmCtlColorEdit_WithMatchingLabelEditHwnd_SetsDCColorsAndReturnsNonZeroBrush(int backR, int backG, int backB, int foreR, int foreG, int foreB)
+    {
+        // Regression test for issue #12042
+        Color expectedBackColor = Color.FromArgb(backR, backG, backB);
+        Color expectedForeColor = Color.FromArgb(foreR, foreG, foreB);
+
+        using SubListView listView = new()
+        {
+            LabelEdit = true,
+            View = View.Details,
+            Size = new Size(300, 200),
+            BackColor = expectedBackColor,
+            ForeColor = expectedForeColor
+        };
+
+        listView.Columns.Add(new ColumnHeader { Text = "Column 1", Width = 200 });
+        listView.Items.Add(new ListViewItem("Item 1"));
+        listView.CreateControl();
+
+        // Select the item then trigger label editing via the timer (same pattern used in
+        // ListView_OnMouseClick_EditLabel_AsExpected).
+        PInvoke.SetFocus(listView);
+        listView.Items[0].Selected = true;
+
+        Point itemLocation = listView.Items[0].Bounds.Location + new Size(1, 1);
+        PInvokeCore.PostMessage(listView, PInvokeCore.WM_LBUTTONUP, 0, PARAM.FromPoint(itemLocation));
+        PInvokeCore.SendMessage(listView, PInvokeCore.WM_LBUTTONDOWN, 1, PARAM.FromPoint(itemLocation));
+        PInvokeCore.SendMessage(listView, PInvokeCore.WM_TIMER,
+            (WPARAM)(nint)listView.TestAccessor.Dynamic.LVLABELEDITTIMER);
+
+        HWND editHwnd = (HWND)(nint)PInvokeCore.SendMessage(listView, PInvoke.LVM_GETEDITCONTROL);
+        Assert.NotEqual(HWND.Null, editHwnd);
+
+        using GetDcScope hdc = new(editHwnd);
+        Message msg = Message.Create(
+            listView.Handle,
+            (int)PInvokeCore.WM_CTLCOLOREDIT,
+            (nint)(HDC)hdc,
+            (nint)editHwnd);
+
+        listView.WndProc(ref msg);
+
+        // 1. A valid (non-null) brush handle must be returned.
+        Assert.NotEqual(IntPtr.Zero, (nint)msg.ResultInternal);
+
+        // 2. DC text color must match the ForeColor we set on the control.
+        Color actualTextColor = PInvoke.GetTextColor(hdc);
+        Assert.Equal(
+            ColorTranslator.ToWin32(expectedForeColor),
+            ColorTranslator.ToWin32(actualTextColor));
+
+        // 3. DC background color must match the BackColor we set on the control.
+        Color actualBkColor = PInvoke.GetBkColor(hdc);
+        Assert.Equal(
+            ColorTranslator.ToWin32(expectedBackColor),
+            ColorTranslator.ToWin32(actualBkColor));
+
+        PInvokeCore.SendMessage(listView, PInvoke.LVM_CANCELEDITLABEL);
     }
 
     private class SubListViewItem : ListViewItem
@@ -6194,6 +6315,8 @@ public class ListViewTests
         public new void OnCacheVirtualItems(CacheVirtualItemsEventArgs e) => base.OnCacheVirtualItems(e);
 
         public new void OnItemChecked(ItemCheckedEventArgs e) => base.OnItemChecked(e);
+
+        public new void WndProc(ref Message m) => base.WndProc(ref m);
     }
 
     private SubListView GetSubListViewWithData(View view, bool virtualMode, bool showGroups, bool withinGroup, bool createControl)

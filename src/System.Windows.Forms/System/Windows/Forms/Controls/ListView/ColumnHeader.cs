@@ -282,7 +282,7 @@ public partial class ColumnHeader : Component, ICloneable
             {
                 ListView.SetColumnInfo(LVCOLUMNW_MASK.LVCF_MINWIDTH, this);
 
-                if (_width < _minimumWidth)
+                if (Width < _minimumWidth)
                 {
                     _width = _minimumWidth;
                     ListView.SetColumnWidth(Index, ColumnHeaderAutoResizeStyle.None);

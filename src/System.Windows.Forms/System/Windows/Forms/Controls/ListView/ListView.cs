@@ -515,7 +515,7 @@ public partial class ListView : Control
 
                     _listViewState[LISTVIEWSTATE_checkBoxes] = value;
 
-                    if ((!value && StateImageList is not null && IsHandleCreated) ||
+                    if ((!value &&StateImageList is not null && IsHandleCreated) ||
                         (!value && Alignment == ListViewAlignment.Left && IsHandleCreated) ||
                         (value && View == View.List && IsHandleCreated) ||
                         (value && (View == View.SmallIcon || View == View.LargeIcon) && IsHandleCreated))
@@ -1982,6 +1982,9 @@ public partial class ListView : Control
         remove => _onColumnClick -= value;
     }
 
+    /// <summary>
+    ///  Occurs when the user clicks a column header's drop-down button.
+    /// </summary>
     [SRCategory(nameof(SR.CatAction))]
     public event EventHandler<ColumnDropDownClickEventArgs>? ColumnDropDownClicked
     {
@@ -3954,7 +3957,23 @@ public partial class ListView : Control
         {
             lvColumn.pszText = columnHeaderText;
 
-            return (int)PInvokeCore.SendMessage(this, PInvoke.LVM_INSERTCOLUMNW, (WPARAM)index, ref lvColumn);
+            int insertedIndex = (int)PInvokeCore.SendMessage(this, PInvoke.LVM_INSERTCOLUMNW, (WPARAM)index, ref lvColumn);
+            if (insertedIndex == 0 && (ch.FixedWidth || ch.SplitButton))
+            {
+                // Native insertion forces the first column's format to left-aligned, clearing these styles.
+                lvColumn.mask = LVCOLUMNW_MASK.LVCF_FMT;
+                if (ch.ActualImageIndex_Internal != -1)
+                {
+                    lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_IMAGE;
+                }
+
+                if (PInvokeCore.SendMessage(this, PInvoke.LVM_SETCOLUMNW, (WPARAM)insertedIndex, ref lvColumn) == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException(SR.ListViewColumnInfoSet);
+                }
+            }
+
+            return insertedIndex;
         }
     }
 
@@ -4470,9 +4489,9 @@ public partial class ListView : Control
     }
 
     /// <summary>
-    ///  Fires the column header drop-down clicked event.
+    ///  Raises the <see cref="ColumnDropDownClicked"/> event.
     /// </summary>
-    /// <param name="e">A <see cref="ColumnDropDownClickEventArgs"/> that contains the event data.</param>
+    /// <param name="e">The event data.</param>
     protected void OnColumnDropDownClicked(ColumnDropDownClickEventArgs e)
     {
         ((EventHandler<ColumnDropDownClickEventArgs>?)Events[s_columnDropDownClickedEvent])?.Invoke(this, e);
@@ -4565,6 +4584,11 @@ public partial class ListView : Control
         FlipViewToLargeIconAndSmallIcon = false;
 
         base.OnHandleCreated(e);
+
+        if (!IsHandleCreated)
+        {
+            return;
+        }
 
         int version = (int)PInvokeCore.SendMessage(this, PInvoke.CCM_GETVERSION);
         if (version < 5)
@@ -5303,7 +5327,6 @@ public partial class ListView : Control
             // This means that we have to include the TextAlign into the column format.
 
             lvColumn.mask |= LVCOLUMNW_MASK.LVCF_FMT;
-            lvColumn.fmt |= (LVCOLUMNW_FORMAT)ch.TextAlign;
 
             if (ch.FixedWidth)
             {
@@ -5322,21 +5345,8 @@ public partial class ListView : Control
                 lvColumn.iImage = ch.ActualImageIndex_Internal;
                 lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_IMAGE;
             }
-        }
-        else if (ch.FixedWidth || ch.SplitButton)
-        {
-            lvColumn.mask |= LVCOLUMNW_MASK.LVCF_FMT;
+
             lvColumn.fmt |= (LVCOLUMNW_FORMAT)ch.TextAlign;
-
-            if (ch.FixedWidth)
-            {
-                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH;
-            }
-
-            if (ch.SplitButton)
-            {
-                lvColumn.fmt |= LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
-            }
         }
 
         if ((mask & LVCOLUMNW_MASK.LVCF_MINWIDTH) != 0)

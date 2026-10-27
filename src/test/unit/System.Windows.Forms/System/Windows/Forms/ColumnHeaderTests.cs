@@ -82,6 +82,187 @@ public class ColumnHeaderTests
         Assert.Equal(value, (column.fmt & LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON) != 0);
     }
 
+    [WinFormsFact]
+    public void ColumnHeader_MinimumWidth_SetWithHandle_EnforcesDirectAndAutoResizeWidths()
+    {
+        using ListView listView = new()
+        {
+            View = View.Details
+        };
+        using ColumnHeader header = new()
+        {
+            Text = "Header",
+            Width = 100
+        };
+        listView.Columns.Add(header);
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+
+        header.MinimumWidth = 80;
+        header.Width = 20;
+        Assert.Equal(80, header.Width);
+
+        listView.AutoResizeColumn(0, ColumnHeaderAutoResizeStyle.ColumnContent);
+        Assert.True(header.Width >= header.MinimumWidth);
+    }
+
+    [WinFormsTheory]
+    [InlineData(200, 200)]
+    [InlineData(40, 100)]
+    public void ColumnHeader_MinimumWidth_SetAfterTracking_UsesNativeWidth(int width, int expectedWidth)
+    {
+        using ListView listView = new()
+        {
+            View = View.Details
+        };
+        using ColumnHeader header = new();
+        listView.Columns.Add(header);
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+
+        NMHEADERW notification = new()
+        {
+            hdr = new NMHDR
+            {
+                hwndFrom = (HWND)PInvokeCore.SendMessage(listView, PInvoke.LVM_GETHEADER),
+                code = PInvoke.HDN_BEGINTRACKW
+            }
+        };
+        PInvokeCore.SendMessage(listView, PInvokeCore.WM_NOTIFY, 0, ref notification);
+        PInvokeCore.SendMessage(listView, PInvoke.LVM_SETCOLUMNWIDTH, 0, LPARAM.MAKELPARAM(width, 0));
+        notification.hdr.code = PInvoke.HDN_ENDTRACKW;
+        PInvokeCore.SendMessage(listView, PInvokeCore.WM_NOTIFY, 0, ref notification);
+        Assert.Equal(60, header.WidthInternal);
+
+        header.MinimumWidth = 100;
+
+        Assert.Equal(expectedWidth, header.Width);
+    }
+
+    [WinFormsTheory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void ColumnHeader_ColumnStyles_UpdateTextAndMinimumWidth_PreservesImage(bool fixedWidth, bool splitButton)
+    {
+        using Bitmap image = new(10, 10);
+        using ImageList imageList = new();
+        imageList.Images.Add(image);
+        using ListView listView = new()
+        {
+            SmallImageList = imageList,
+            View = View.Details
+        };
+        listView.Columns.Add("First");
+        using ColumnHeader header = new()
+        {
+            FixedWidth = fixedWidth,
+            ImageIndex = 0,
+            SplitButton = splitButton,
+            TextAlign = HorizontalAlignment.Center,
+            Width = 100
+        };
+        listView.Columns.Add(header);
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+        LVCOLUMNW_FORMAT expectedStyles = LVCOLUMNW_FORMAT.LVCFMT_CENTER | LVCOLUMNW_FORMAT.LVCFMT_IMAGE;
+        if (fixedWidth)
+        {
+            expectedStyles |= LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH;
+        }
+
+        if (splitButton)
+        {
+            expectedStyles |= LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+        }
+
+        AssertColumnFormat(listView, 1, expectedStyles);
+
+        header.Text = "Updated";
+        AssertColumnFormat(listView, 1, expectedStyles);
+
+        header.MinimumWidth = 40;
+        AssertColumnFormat(listView, 1, expectedStyles);
+    }
+
+    [WinFormsFact]
+    public void ColumnHeader_ColumnStyles_SetFalse_PreservesAlignmentAndImageFlags()
+    {
+        using Bitmap image = new(10, 10);
+        using ImageList imageList = new();
+        imageList.Images.Add(image);
+        using ListView listView = new()
+        {
+            SmallImageList = imageList,
+            View = View.Details
+        };
+        listView.Columns.Add("First");
+        using ColumnHeader header = new()
+        {
+            FixedWidth = true,
+            ImageIndex = 0,
+            SplitButton = true,
+            TextAlign = HorizontalAlignment.Center
+        };
+        listView.Columns.Add(header);
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+
+        header.FixedWidth = false;
+        AssertColumnFormat(
+            listView,
+            columnIndex: 1,
+            expectedStyles: LVCOLUMNW_FORMAT.LVCFMT_CENTER
+                | LVCOLUMNW_FORMAT.LVCFMT_IMAGE
+                | LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON);
+
+        header.SplitButton = false;
+        AssertColumnFormat(
+            listView,
+            columnIndex: 1,
+            expectedStyles: LVCOLUMNW_FORMAT.LVCFMT_CENTER
+                | LVCOLUMNW_FORMAT.LVCFMT_IMAGE);
+    }
+
+    [WinFormsTheory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    public void ColumnHeader_ColumnStyles_RecreateHandle_RestoresNativeColumnState(int imageIndex)
+    {
+        using Bitmap image = new(10, 10);
+        using ImageList imageList = new();
+        imageList.Images.Add(image);
+        using ListView listView = new()
+        {
+            SmallImageList = imageList,
+            View = View.Details
+        };
+        using ColumnHeader header = new()
+        {
+            FixedWidth = true,
+            ImageIndex = imageIndex,
+            MinimumWidth = 40,
+            SplitButton = true,
+            Width = 80
+        };
+        listView.Columns.Add(header);
+        Assert.NotEqual(IntPtr.Zero, listView.Handle);
+        LVCOLUMNW_FORMAT expectedStyles = LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH | LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+        if (imageIndex != -1)
+        {
+            expectedStyles |= LVCOLUMNW_FORMAT.LVCFMT_IMAGE;
+        }
+
+        AssertColumnFormat(listView, 0, expectedStyles);
+
+        listView.TestAccessor.Dynamic.RecreateHandle();
+
+        LVCOLUMNW column = new()
+        {
+            mask = LVCOLUMNW_MASK.LVCF_MINWIDTH | LVCOLUMNW_MASK.LVCF_FMT
+        };
+
+        Assert.Equal(1, (int)PInvokeCore.SendMessage(listView, PInvoke.LVM_GETCOLUMNW, 0, ref column));
+        Assert.Equal(40, column.cxMin);
+        AssertColumnFormat(listView, 0, expectedStyles);
+        Assert.Equal(80, header.Width);
+    }
+
     [WinFormsTheory]
     [InlineData(-1)]
     [InlineData(0)]
@@ -1717,5 +1898,30 @@ public class ColumnHeaderTests
         public new EventHandlerList Events => base.Events;
 
         public new bool DesignMode => base.DesignMode;
+    }
+
+    private static void AssertColumnFormat(
+        ListView listView,
+        int columnIndex,
+        LVCOLUMNW_FORMAT expectedStyles)
+    {
+        LVCOLUMNW column = new()
+        {
+            mask = LVCOLUMNW_MASK.LVCF_FMT
+        };
+
+        Assert.Equal(
+            1,
+            (int)PInvokeCore.SendMessage(
+                listView,
+                PInvoke.LVM_GETCOLUMNW,
+                (WPARAM)columnIndex,
+                ref column));
+        LVCOLUMNW_FORMAT relevantStyles = LVCOLUMNW_FORMAT.LVCFMT_RIGHT
+            | LVCOLUMNW_FORMAT.LVCFMT_CENTER
+            | LVCOLUMNW_FORMAT.LVCFMT_IMAGE
+            | LVCOLUMNW_FORMAT.LVCFMT_FIXED_WIDTH
+            | LVCOLUMNW_FORMAT.LVCFMT_SPLITBUTTON;
+        Assert.Equal(expectedStyles, column.fmt & relevantStyles);
     }
 }
