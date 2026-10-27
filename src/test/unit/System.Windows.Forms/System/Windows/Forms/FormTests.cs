@@ -235,6 +235,122 @@ public partial class FormTests
         Assert.Equal(value, form.Active);
     }
 
+    [WinFormsFact]
+    public void Form_ShowDialogWithOwner_ClosingOwnerProgrammatically_ChildCloseEventsRaisedOnce()
+    {
+        using Form owner = new();
+        using Form child = new();
+        int formClosingCallCount = 0;
+        int formClosedCallCount = 0;
+        CloseReason closingReason = CloseReason.None;
+        CloseReason closedReason = CloseReason.None;
+
+        child.FormClosing += (_, e) =>
+        {
+            formClosingCallCount++;
+            closingReason = e.CloseReason;
+        };
+        child.FormClosed += (_, e) =>
+        {
+            formClosedCallCount++;
+            closedReason = e.CloseReason;
+        };
+        child.Shown += (_, _) => child.BeginInvoke(new Action(owner.Close));
+
+        owner.Show();
+        child.ShowDialog(owner);
+
+        Assert.Equal(1, formClosingCallCount);
+        Assert.Equal(1, formClosedCallCount);
+        Assert.Equal(CloseReason.FormOwnerClosing, closingReason);
+        Assert.Equal(CloseReason.FormOwnerClosing, closedReason);
+    }
+
+    [WinFormsFact]
+    public void Form_ShowDialogWithOwner_CanceledOwnerClose_DoesNotRetainClosingState()
+    {
+        using Form owner = new();
+        using Form child = new();
+        List<CloseReason> closingReasons = [];
+        int formClosedCallCount = 0;
+
+        owner.FormClosing += (_, e) => e.Cancel = true;
+        child.FormClosing += (_, e) => closingReasons.Add(e.CloseReason);
+        child.FormClosed += (_, _) => formClosedCallCount++;
+        child.Shown += (_, _) =>
+        {
+            child.BeginInvoke(new Action(() =>
+            {
+                owner.Close();
+                child.DialogResult = DialogResult.OK;
+            }));
+        };
+
+        owner.Show();
+        DialogResult result = child.ShowDialog(owner);
+
+        Assert.Equal(DialogResult.OK, result);
+        Assert.Equal([CloseReason.FormOwnerClosing, CloseReason.None], closingReasons);
+        Assert.Equal(1, formClosedCallCount);
+        Assert.True(owner.Visible);
+    }
+
+    [WinFormsTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Form_ShowDialogWithOwner_CanceledOwnerClose_DialogClosingCanBeCanceled(bool cancelFromOwner)
+    {
+        using Form owner = new();
+        using Form child = new();
+        List<CloseReason> closingReasons = [];
+        int dialogClosingCallCount = 0;
+        int formClosedCallCount = 0;
+        CloseReason closedReason = CloseReason.None;
+        bool dialogCloseAccepted = true;
+
+        owner.FormClosing += (_, e) =>
+        {
+            if (cancelFromOwner)
+            {
+                e.Cancel = true;
+            }
+        };
+        child.FormClosing += (_, e) =>
+        {
+            closingReasons.Add(e.CloseReason);
+            if (e.CloseReason == CloseReason.FormOwnerClosing)
+            {
+                e.Cancel = !cancelFromOwner;
+            }
+            else
+            {
+                e.Cancel = dialogClosingCallCount++ == 0;
+            }
+        };
+        child.FormClosed += (_, e) =>
+        {
+            formClosedCallCount++;
+            closedReason = e.CloseReason;
+        };
+        child.Shown += (_, _) => child.BeginInvoke(new Action(() =>
+        {
+            owner.Close();
+            child.DialogResult = DialogResult.OK;
+            dialogCloseAccepted = child.CheckCloseDialog(closingOnly: false);
+            child.DialogResult = DialogResult.OK;
+        }));
+
+        owner.Show();
+        DialogResult result = child.ShowDialog(owner);
+
+        Assert.False(dialogCloseAccepted);
+        Assert.Equal(DialogResult.OK, result);
+        Assert.Equal([CloseReason.FormOwnerClosing, CloseReason.None, CloseReason.None], closingReasons);
+        Assert.Equal(1, formClosedCallCount);
+        Assert.Equal(CloseReason.None, closedReason);
+        Assert.True(owner.Visible);
+    }
+
     // non deterministic, commenting out for now
     /*[Fact]
     public void Form_ActiveFormNotSetActive()
@@ -1031,6 +1147,79 @@ public partial class FormTests
 
         Assert.Equal(new Point(20, 21), form.Location);
         Assert.Equal(new Size(300, 310), form.Size);
+    }
+
+    [WinFormsFact]
+    // Regression test for https://github.com/dotnet/winforms/issues/14830
+    // Minimizing a Form must not lay out (and thus resize) its docked children down to the
+    // 0x0 minimized client size. Doing so previously drove Dock/Anchor-ed children (most
+    // notably RichTextBox) through a resize-to-zero-and-back sequence while the owning Form
+    // was iconic, which corrupts native state in some child controls even though nothing in
+    // the child's own bounds should have changed as a result of minimizing the Form.
+    public void Form_WindowState_Minimize_DoesNotResizeDockedChildControl()
+    {
+        using Form form = new() { ClientSize = new Size(300, 200) };
+        using Control child = new() { Dock = DockStyle.Fill };
+        form.Controls.Add(child);
+        form.Show();
+
+        Rectangle expectedBounds = child.Bounds;
+        Assert.NotEqual(Size.Empty, expectedBounds.Size);
+
+        form.WindowState = FormWindowState.Minimized;
+        Assert.Equal(expectedBounds, child.Bounds);
+
+        form.WindowState = FormWindowState.Normal;
+        Assert.Equal(expectedBounds, child.Bounds);
+    }
+
+    [WinFormsFact]
+    // Regression test for https://github.com/dotnet/winforms/issues/14830
+    public void Form_WindowState_Minimize_DoesNotResizeAnchoredChildControl()
+    {
+        using Form form = new() { ClientSize = new Size(300, 200) };
+        using RichTextBox child = new()
+        {
+            Location = new Point(10, 10),
+            Size = new Size(280, 180),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom,
+            Text = "first line\nsecond line"
+        };
+        form.Controls.Add(child);
+        form.Show();
+
+        Rectangle expectedBounds = child.Bounds;
+
+        form.WindowState = FormWindowState.Minimized;
+        Assert.Equal(expectedBounds, child.Bounds);
+
+        child.Select(0, child.Text.IndexOf('\n') + 1);
+        child.SelectedRtf = "{\\rtf1\\ansi}";
+
+        form.WindowState = FormWindowState.Normal;
+        Assert.Equal(expectedBounds, child.Bounds);
+    }
+
+    [WinFormsFact]
+    // Regression test for https://github.com/dotnet/winforms/issues/14830
+    // Verifies that suspending layout while minimized does not leave layout permanently
+    // suspended: after repeated minimize/restore cycles the Form must still lay out its
+    // docked children normally in response to a real size change.
+    public void Form_WindowState_MinimizeRestoreCycle_LayoutResumesCorrectly()
+    {
+        using Form form = new() { ClientSize = new Size(300, 200) };
+        using Control child = new() { Dock = DockStyle.Fill };
+        form.Controls.Add(child);
+        form.Show();
+
+        for (int i = 0; i < 3; i++)
+        {
+            form.WindowState = FormWindowState.Minimized;
+            form.WindowState = FormWindowState.Normal;
+        }
+
+        form.ClientSize = new Size(400, 250);
+        Assert.Equal(form.ClientSize, child.Size);
     }
 
     [WinFormsFact]

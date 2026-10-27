@@ -3209,7 +3209,7 @@ public partial class Form : ContainerControl
                 }
             }
 
-            if (!closingOnly && _dialogResult != DialogResult.None)
+            if (!closingOnly && _dialogResult != DialogResult.None && !IsClosing)
             {
                 FormClosedEventArgs fc = new(_closeReason);
 #pragma warning disable WFDEV004 // Type or member is obsolete - compat
@@ -6872,6 +6872,15 @@ public partial class Form : ContainerControl
                     for (int i = ownedForms.Count - 1; i >= 0; i--)
                     {
                         fc = new FormClosedEventArgs(CloseReason.FormOwnerClosing);
+
+                        // Commit modal closing state only after the owner close can no longer be canceled.
+                        if (ownedForms[i].Modal)
+                        {
+                            ownedForms[i].CalledClosing = true;
+                            ownedForms[i].IsClosing = true;
+                            ownedForms[i].CloseReason = CloseReason.FormOwnerClosing;
+                        }
+
                         // Call OnClosed and OnFormClosed on the child forms.
 #pragma warning disable WFDEV004 // Type or member is obsolete - compat
                         ownedForms[i].OnClosed(fc);
