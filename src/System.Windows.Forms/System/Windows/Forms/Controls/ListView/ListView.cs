@@ -2651,7 +2651,7 @@ public partial class ListView : Control
                             Items[(int)nmcd->nmcd.dwItemSpec],
                             itemBounds,
                             (int)nmcd->nmcd.dwItemSpec,
-                            (ListViewItemStates)nmcd->nmcd.uItemState);
+                            (ListViewItemStates)GetCustomDrawItemState(itemIndex, nmcd->nmcd.uItemState));
 
                         OnDrawItem(e);
 
@@ -2743,7 +2743,7 @@ public partial class ListView : Control
                                     itemIndex,
                                     nmcd->iSubItem,
                                     _columnHeaders![nmcd->iSubItem],
-                                    (ListViewItemStates)nmcd->nmcd.uItemState);
+                                    (ListViewItemStates)GetCustomDrawItemState(itemIndex, nmcd->nmcd.uItemState));
                                 OnDrawSubItem(e);
 
                                 // the customer still wants to draw the default.
@@ -2769,19 +2769,7 @@ public partial class ListView : Control
 
                     Debug.Assert(item is not null, "Item was null in ITEMPREPAINT");
 
-                    NMCUSTOMDRAW_DRAW_STATE_FLAGS state = nmcd->nmcd.uItemState;
-                    // There is a known and documented problem in the ListView winctl control -
-                    // if the LVS_SHOWSELALWAYS style is set, then the item state will have
-                    // the CDIS_SELECTED bit set for all items. So we need to verify with the
-                    // real item state to be sure.
-                    if (!HideSelection)
-                    {
-                        LIST_VIEW_ITEM_STATE_FLAGS realState = GetItemState((int)nmcd->nmcd.dwItemSpec);
-                        if ((realState & LIST_VIEW_ITEM_STATE_FLAGS.LVIS_SELECTED) == 0)
-                        {
-                            state &= ~NMCUSTOMDRAW_DRAW_STATE_FLAGS.CDIS_SELECTED;
-                        }
-                    }
+                    NMCUSTOMDRAW_DRAW_STATE_FLAGS state = GetCustomDrawItemState(itemIndex, nmcd->nmcd.uItemState);
 
                     // subitem is invalid if the flag isn't set -- and we also use this code in
                     // cases where subitems aren't visible (ie. non-Details modes), so if subitem
@@ -2935,6 +2923,17 @@ public partial class ListView : Control
             Debug.Fail("Exception occurred attempting to setup custom draw. Disabling custom draw for this control", e.ToString());
             m.ResultInternal = (LRESULT)(nint)PInvoke.CDRF_DODEFAULT;
         }
+    }
+
+    private NMCUSTOMDRAW_DRAW_STATE_FLAGS GetCustomDrawItemState(int itemIndex, NMCUSTOMDRAW_DRAW_STATE_FLAGS state)
+    {
+        // With LVS_SHOWSELALWAYS, the native control can report CDIS_SELECTED for unselected items.
+        if (!HideSelection && (GetItemState(itemIndex) & LIST_VIEW_ITEM_STATE_FLAGS.LVIS_SELECTED) == 0)
+        {
+            state &= ~NMCUSTOMDRAW_DRAW_STATE_FLAGS.CDIS_SELECTED;
+        }
+
+        return state;
     }
 
     private static void DeleteFileName(string? fileName)
