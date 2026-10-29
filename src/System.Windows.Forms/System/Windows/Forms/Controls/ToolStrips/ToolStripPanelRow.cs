@@ -291,6 +291,8 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
     protected internal virtual void OnControlAdded(Control control, int index)
     {
+        ClearUnconstrainedMargins();
+
         // If previously added - remove.
 
         if (control is ISupportToolStripPanel controlToBeDragged)
@@ -303,6 +305,7 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
     protected internal virtual void OnOrientationChanged()
     {
+        ClearUnconstrainedMargins();
         _rowManager = null;
     }
 
@@ -315,6 +318,8 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
     protected internal virtual void OnControlRemoved(Control control, int index)
     {
+        ClearUnconstrainedMargins();
+
         if (!_state[s_stateDisposing])
         {
             SuspendLayout();
@@ -363,6 +368,14 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
         }
     }
 
+    private void ClearUnconstrainedMargins()
+    {
+        foreach (ToolStripPanelCell cell in Cells)
+        {
+            cell.UnconstrainedMargin = null;
+        }
+    }
+
     protected virtual void OnLayout(LayoutEventArgs e)
     {
         if (Initialized && !_state[s_stateInLayout])
@@ -370,6 +383,15 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
             _state[s_stateInLayout] = true;
             try
             {
+                // Retry the preferred positions while retaining effective margins for dragging.
+                foreach (ToolStripPanelCell currentCell in Cells)
+                {
+                    if (currentCell.UnconstrainedMargin is Padding margin)
+                    {
+                        currentCell.Margin = margin;
+                    }
+                }
+
                 Margin = DefaultMargin;
                 CachedBoundsMode = true;
                 try
@@ -426,28 +448,30 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
         // since layout is suspended, we'll need to watch changes to the margin
         // as a result of calling FreeSpaceFromRow.
-        Padding[] margins = new Padding[Cells.Count];
+        int[] margins = new int[Cells.Count];
         for (int i = 0; i < Cells.Count; i++)
         {
             ToolStripPanelCell c = (ToolStripPanelCell)Cells[i];
-            margins[i] = c.Margin;
+            c.UnconstrainedMargin ??= c.Margin;
+            margins[i] = c.Margin.Left;
         }
 
         spaceToFree -= RowManager.FreeSpaceFromRow(spaceToFree);
 
-        // now apply those changes to the cached bounds, then restore the original margins.
-        // FreeSpaceFromRow only needs to affect the bounds used for this layout pass - the
-        // margins represent the ToolStrips' preferred (rafted) position and must be preserved
-        // so that the row can return to its original layout once more space becomes available
-        // again, e.g. after the owning Form is minimized and then restored.
-        // See https://github.com/dotnet/winforms/issues/4359.
+        // Removing a gap also shifts every subsequent cell.
+        int offset = 0;
         for (int i = 0; i < Cells.Count; i++)
         {
             ToolStripPanelCell c = (ToolStripPanelCell)Cells[i];
+            if (!c.ParticipatesInLayout)
+            {
+                continue;
+            }
+
             Rectangle cachedBounds = c.CachedBounds;
-            cachedBounds.X -= Math.Max(0, margins[i].Left - c.Margin.Left);
+            offset += Math.Max(0, margins[i] - c.Margin.Left);
+            cachedBounds.X -= offset;
             c.CachedBounds = cachedBounds;
-            c.Margin = margins[i];
         }
 
         if (spaceToFree <= 0)
@@ -529,28 +553,30 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
         // since layout is suspended, we'll need to watch changes to the margin
         // as a result of calling FreeSpaceFromRow.
-        Padding[] margins = new Padding[Cells.Count];
+        int[] margins = new int[Cells.Count];
         for (int i = 0; i < Cells.Count; i++)
         {
             ToolStripPanelCell c = (ToolStripPanelCell)Cells[i];
-            margins[i] = c.Margin;
+            c.UnconstrainedMargin ??= c.Margin;
+            margins[i] = c.Margin.Top;
         }
 
         spaceToFree -= RowManager.FreeSpaceFromRow(spaceToFree);
 
-        // now apply those changes to the cached bounds, then restore the original margins.
-        // FreeSpaceFromRow only needs to affect the bounds used for this layout pass - the
-        // margins represent the ToolStrips' preferred (rafted) position and must be preserved
-        // so that the row can return to its original layout once more space becomes available
-        // again, e.g. after the owning Form is minimized and then restored.
-        // See https://github.com/dotnet/winforms/issues/4359.
+        // Removing a gap also shifts every subsequent cell.
+        int offset = 0;
         for (int i = 0; i < Cells.Count; i++)
         {
             ToolStripPanelCell c = (ToolStripPanelCell)Cells[i];
+            if (!c.ParticipatesInLayout)
+            {
+                continue;
+            }
+
             Rectangle cachedBounds = c.CachedBounds;
-            cachedBounds.Y = Math.Max(0, cachedBounds.Y - Math.Max(0, margins[i].Top - c.Margin.Top));
+            offset += Math.Max(0, margins[i] - c.Margin.Top);
+            cachedBounds.Y -= offset;
             c.CachedBounds = cachedBounds;
-            c.Margin = margins[i];
         }
 
         if (spaceToFree <= 0)
@@ -714,16 +740,26 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
     internal void MoveControl(ToolStrip movingControl, Point startClientLocation, Point endClientLocation)
     {
+        bool positionChanged = Orientation == Orientation.Horizontal
+            ? startClientLocation.X != endClientLocation.X
+            : startClientLocation.Y != endClientLocation.Y;
+        if (!Locked && positionChanged)
+        {
+            ClearUnconstrainedMargins();
+        }
+
         RowManager.MoveControl(movingControl, startClientLocation, endClientLocation);
     }
 
     internal void JoinRow(ToolStrip toolStripToDrag, Point locationToDrag)
     {
+        ClearUnconstrainedMargins();
         RowManager.JoinRow(toolStripToDrag, locationToDrag);
     }
 
     internal void LeaveRow(ToolStrip toolStripToDrag)
     {
+        ClearUnconstrainedMargins();
         RowManager.LeaveRow(toolStripToDrag);
         if (ControlsInternal.Count == 0)
         {

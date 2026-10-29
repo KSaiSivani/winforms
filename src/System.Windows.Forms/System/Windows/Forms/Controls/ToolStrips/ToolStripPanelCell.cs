@@ -69,6 +69,8 @@ internal sealed class ToolStripPanelCell : ArrangedElement
         }
     }
 
+    internal Padding? UnconstrainedMargin { get; set; }
+
     public Control Control
     {
         get { return _wrappedToolStrip; }
@@ -105,6 +107,7 @@ internal sealed class ToolStripPanelCell : ArrangedElement
                 }
 
                 _parent = value;
+                UnconstrainedMargin = null;
                 Margin = Padding.Empty;
             }
         }
