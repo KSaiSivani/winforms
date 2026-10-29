@@ -18,9 +18,6 @@ namespace System.Windows.Forms;
 /// </summary>
 public static class SystemInformation
 {
-    private static bool s_checkMultiMonitorSupport;
-    private static bool s_multiMonitorSupport;
-
     private static HWINSTA s_processWinStation;
     private static bool s_isUserInteractive;
 
@@ -412,20 +409,6 @@ public static class SystemInformation
     /// </summary>
     public static bool MidEastEnabled => PInvokeCore.GetSystemMetrics(SM_MIDEASTENABLED) != 0;
 
-    internal static bool MultiMonitorSupport
-    {
-        get
-        {
-            if (!s_checkMultiMonitorSupport)
-            {
-                s_multiMonitorSupport = PInvokeCore.GetSystemMetrics(SM_CMONITORS) != 0;
-                s_checkMultiMonitorSupport = true;
-            }
-
-            return s_multiMonitorSupport;
-        }
-    }
-
     /// <summary>
     ///  Gets a value indicating whether a mouse with a mouse wheel is installed.
     /// </summary>
@@ -447,32 +430,21 @@ public static class SystemInformation
     ///  Gets the bounds of the virtual screen.
     /// </summary>
     public static Rectangle VirtualScreen
-    {
-        get
-        {
-            if (MultiMonitorSupport)
-            {
-                return new(PInvokeCore.GetSystemMetrics(SM_XVIRTUALSCREEN),
-                    PInvokeCore.GetSystemMetrics(SM_YVIRTUALSCREEN),
-                    PInvokeCore.GetSystemMetrics(SM_CXVIRTUALSCREEN),
-                    PInvokeCore.GetSystemMetrics(SM_CYVIRTUALSCREEN));
-            }
-
-            Size size = PrimaryMonitorSize;
-            return new Rectangle(0, 0, size.Width, size.Height);
-        }
-    }
+        => new(PInvokeCore.GetSystemMetrics(SM_XVIRTUALSCREEN),
+            PInvokeCore.GetSystemMetrics(SM_YVIRTUALSCREEN),
+            PInvokeCore.GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            PInvokeCore.GetSystemMetrics(SM_CYVIRTUALSCREEN));
 
     /// <summary>
     ///  Gets the number of display monitors on the desktop.
     /// </summary>
-    public static int MonitorCount => MultiMonitorSupport ? PInvokeCore.GetSystemMetrics(SM_CMONITORS) : 1;
+    public static int MonitorCount => PInvokeCore.GetSystemMetrics(SM_CMONITORS);
 
     /// <summary>
     ///  Gets a value indicating whether all the display monitors have the same color format.
     /// </summary>
     public static bool MonitorsSameDisplayFormat
-        => !MultiMonitorSupport || PInvokeCore.GetSystemMetrics(SM_SAMEDISPLAYFORMAT) != 0;
+        => PInvokeCore.GetSystemMetrics(SM_SAMEDISPLAYFORMAT) != 0;
 
     /// <summary>
     ///  Gets the computer name of the current system.

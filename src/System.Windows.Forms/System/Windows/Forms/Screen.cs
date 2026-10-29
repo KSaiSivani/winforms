@@ -41,8 +41,7 @@ public partial class Screen
 
     private int _currentDesktopChangedCount = -1; // instance-based counter used to invalidate WorkingArea
 
-    // This identifier is just for us, so that we don't try to call the multimon functions if we just need the
-    // primary monitor. This is safer for non-multimon OSes.
+    // Used when monitor enumeration returns no displays.
     private static readonly HMONITOR s_primaryMonitor = (HMONITOR)unchecked((nint)0xBAADF00D);
 
     private static Screen[]? s_screens;
@@ -55,16 +54,14 @@ public partial class Screen
     {
         HDC screenDC = hdc;
 
-        if (!SystemInformation.MultiMonitorSupport || monitor == s_primaryMonitor)
+        if (monitor == s_primaryMonitor)
         {
-            // Single monitor system
             _bounds = SystemInformation.VirtualScreen;
             _primary = true;
             _deviceName = "DISPLAY";
         }
         else
         {
-            // Multiple monitor system
             MONITORINFOEXW info = new()
             {
                 monitorInfo = new() { cbSize = (uint)sizeof(MONITORINFOEXW) }
@@ -103,21 +100,14 @@ public partial class Screen
         {
             if (s_screens is null)
             {
-                if (SystemInformation.MultiMonitorSupport)
+                List<Screen> screens = [];
+                PInvokeCore.EnumDisplayMonitors((HMONITOR hmonitor, HDC hdc) =>
                 {
-                    List<Screen> screens = [];
-                    PInvokeCore.EnumDisplayMonitors((HMONITOR hmonitor, HDC hdc) =>
-                    {
-                        screens.Add(new(hmonitor, hdc));
-                        return true;
-                    });
+                    screens.Add(new(hmonitor, hdc));
+                    return true;
+                });
 
-                    s_screens = screens.Count > 0 ? [.. screens] : [new(s_primaryMonitor)];
-                }
-                else
-                {
-                    s_screens = [PrimaryScreen!];
-                }
+                s_screens = screens.Count > 0 ? [.. screens] : [new(s_primaryMonitor)];
 
                 // Now that we have our screens, attach a display setting changed
                 // event so that we know when to invalidate them.
@@ -155,23 +145,16 @@ public partial class Screen
     {
         get
         {
-            if (SystemInformation.MultiMonitorSupport)
+            Screen[] screens = AllScreens;
+            for (int i = 0; i < screens.Length; i++)
             {
-                Screen[] screens = AllScreens;
-                for (int i = 0; i < screens.Length; i++)
+                if (screens[i]._primary)
                 {
-                    if (screens[i]._primary)
-                    {
-                        return screens[i];
-                    }
+                    return screens[i];
                 }
+            }
 
-                return null;
-            }
-            else
-            {
-                return new Screen(s_primaryMonitor, default);
-            }
+            return null;
         }
     }
 
@@ -188,14 +171,12 @@ public partial class Screen
             {
                 Interlocked.Exchange(ref _currentDesktopChangedCount, DesktopChangedCount);
 
-                if (!SystemInformation.MultiMonitorSupport || _hmonitor == s_primaryMonitor)
+                if (_hmonitor == s_primaryMonitor)
                 {
-                    // Single monitor system
                     _workingArea = SystemInformation.WorkingArea;
                 }
                 else
                 {
-                    // Multiple monitor System
                     MONITORINFOEXW info = new()
                     {
                         monitorInfo = new() { cbSize = (uint)sizeof(MONITORINFOEXW) }
@@ -247,17 +228,13 @@ public partial class Screen
     ///  Retrieves a <see cref="Screen"/> for the monitor that contains the specified point.
     /// </summary>
     public static Screen FromPoint(Point point)
-        => SystemInformation.MultiMonitorSupport
-        ? new Screen(PInvokeCore.MonitorFromPoint(point, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST))
-        : new Screen(s_primaryMonitor);
+        => new(PInvokeCore.MonitorFromPoint(point, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST));
 
     /// <summary>
     ///  Retrieves a <see cref="Screen"/> for the monitor that contains the largest region of the rectangle.
     /// </summary>
     public static Screen FromRectangle(Rectangle rect)
-        => SystemInformation.MultiMonitorSupport
-        ? new Screen(PInvokeCore.MonitorFromRect(rect, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST))
-        : new Screen(s_primaryMonitor, default);
+        => new(PInvokeCore.MonitorFromRect(rect, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST));
 
     /// <summary>
     ///  Retrieves a <see cref="Screen"/> for the monitor that contains the largest region of the window of the control.
@@ -273,9 +250,7 @@ public partial class Screen
     ///  Retrieves a <see cref="Screen"/> for the monitor that contains the largest region of the window.
     /// </summary>
     public static Screen FromHandle(IntPtr hwnd)
-        => SystemInformation.MultiMonitorSupport
-        ? new Screen(PInvokeCore.MonitorFromWindow((HWND)hwnd, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST))
-        : new Screen(s_primaryMonitor, default);
+        => new(PInvokeCore.MonitorFromWindow((HWND)hwnd, MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST));
 
     /// <summary>
     ///  Retrieves the working area for the monitor that is closest to the specified point.
