@@ -8979,30 +8979,38 @@ public partial class RichTextBoxTests
         };
         form.Controls.Add(control);
         form.Show();
-
+        Application.DoEvents();
+        
         for (int i = 0; i < 5; i++)
         {
             control.AppendText($"line {i}: some sample text of varying length {new string('x', i * 3)}\n");
         }
-
+        
+        string firstLine = control.Text[..(control.Text.IndexOf('\n') + 1)];
+        string expectedText = control.Text[firstLine.Length..];
+        
         form.WindowState = FormWindowState.Minimized;
-        int firstLineLength = control.Text.IndexOf('\n') + 1;
-        control.Select(0, firstLineLength);
+        Application.DoEvents();
+        
+        control.Select(0, firstLine.Length);
         control.SelectedRtf = "{\\rtf1\\ansi}";
+        
         form.WindowState = FormWindowState.Normal;
-        form.WindowState = FormWindowState.Normal;
-
-        string text = control.Text;
-        int lineCount = control.GetLineFromCharIndex(text.Length) + 1;
-        for (int line = 0; line < lineCount; line++)
+        Application.DoEvents();
+        
+        Assert.Equal(expectedText, control.Text);
+        
+        int expectedLineCount = 4;
+        Assert.Equal(expectedLineCount - 1, control.GetLineFromCharIndex(control.Text.Length - 1));
+        
+        int charIndex = 0;
+        for (int line = 0; line < expectedLineCount; line++)
         {
-            int charIndex = control.GetFirstCharIndexFromLine(line);
-            Assert.InRange(charIndex, 0, text.Length);
-            Assert.True(
-                charIndex == 0 || text[charIndex - 1] == '\n',
-                $"Line {line} starts at index {charIndex}, which is not a line boundary in '{text}'.");
+            Assert.Equal(charIndex, control.GetFirstCharIndexFromLine(line));
+            charIndex = control.Text.IndexOf('\n', charIndex) + 1;
         }
     }
+ 
 
     [WinFormsTheory]
     [InlineData(ControlStyles.ContainerControl, false)]
