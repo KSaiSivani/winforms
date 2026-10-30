@@ -2,9 +2,19 @@
 override System.Windows.Forms.GroupBox.OnPaintBackground(System.Windows.Forms.PaintEventArgs! pevent) -> void
 static System.Windows.Forms.Application.SystemVisualSettings.get -> System.Windows.Forms.SystemVisualSettings!
 static System.Windows.Forms.Application.SystemVisualSettingsChanged -> System.Windows.Forms.SystemVisualSettingsChangedEventHandler?
+static System.Windows.Forms.TextRenderer.DrawText(System.Drawing.IDeviceContext! dc, System.ReadOnlySpan<char> text, System.Drawing.Font? font, System.Drawing.Point pt, System.Drawing.Color foreColor, System.Drawing.Color backColor, System.Windows.Forms.TextFormatFlags flags, System.Span<char> outputTextBuffer, out int outputTextLength) -> void
+static System.Windows.Forms.TextRenderer.DrawText(System.Drawing.IDeviceContext! dc, System.ReadOnlySpan<char> text, System.Drawing.Font? font, System.Drawing.Rectangle bounds, System.Drawing.Color foreColor, System.Drawing.Color backColor, System.Windows.Forms.TextFormatFlags flags, System.Span<char> outputTextBuffer, out int outputTextLength) -> void
+static System.Windows.Forms.TextRenderer.DrawText(System.Drawing.IDeviceContext! dc, string? text, System.Drawing.Font? font, System.Drawing.Point pt, System.Drawing.Color foreColor, System.Drawing.Color backColor, System.Windows.Forms.TextFormatFlags flags, out string? outputText) -> void
+static System.Windows.Forms.TextRenderer.DrawText(System.Drawing.IDeviceContext! dc, string? text, System.Drawing.Font? font, System.Drawing.Rectangle bounds, System.Drawing.Color foreColor, System.Drawing.Color backColor, System.Windows.Forms.TextFormatFlags flags, out string? outputText) -> void
+static System.Windows.Forms.TextRenderer.MeasureText(System.Drawing.IDeviceContext! dc, System.ReadOnlySpan<char> text, System.Drawing.Font? font, System.Drawing.Size proposedSize, System.Windows.Forms.TextFormatFlags flags, System.Span<char> outputTextBuffer, out int outputTextLength) -> System.Drawing.Size
+static System.Windows.Forms.TextRenderer.MeasureText(System.Drawing.IDeviceContext! dc, string? text, System.Drawing.Font? font, System.Drawing.Size proposedSize, System.Windows.Forms.TextFormatFlags flags, out string? outputText) -> System.Drawing.Size
+static System.Windows.Forms.TextRenderer.MeasureText(System.ReadOnlySpan<char> text, System.Drawing.Font? font, System.Drawing.Size proposedSize, System.Windows.Forms.TextFormatFlags flags, System.Span<char> outputTextBuffer, out int outputTextLength) -> System.Drawing.Size
+static System.Windows.Forms.TextRenderer.MeasureText(string? text, System.Drawing.Font? font, System.Drawing.Size proposedSize, System.Windows.Forms.TextFormatFlags flags, out string? outputText) -> System.Drawing.Size
 System.Windows.Forms.PropertyGrid.VisualStylesModeChanged -> System.EventHandler?
 virtual System.Windows.Forms.Control.OnSystemVisualSettingsChanged(System.Windows.Forms.SystemVisualSettingsChangedEventArgs! e) -> void
 System.Windows.Forms.Control.SystemVisualSettingsChanged -> System.Windows.Forms.SystemVisualSettingsChangedEventHandler?
+System.Windows.Forms.DataGridViewCellStyle.SortGlyphColor.get -> System.Drawing.Color
+System.Windows.Forms.DataGridViewCellStyle.SortGlyphColor.set -> void
 System.Windows.Forms.SystemVisualSettings.AccentColor.get -> System.Drawing.Color
 System.Windows.Forms.SystemVisualSettings.ClientAreaAnimationEnabled.get -> bool
 System.Windows.Forms.SystemVisualSettings.FocusBorderMetrics.get -> System.Drawing.Size
@@ -58,6 +68,7 @@ override System.Windows.Forms.ListView.BeginSuspendPaintingCore() -> void
 override System.Windows.Forms.ListView.EndSuspendPaintingCore() -> void
 override System.Windows.Forms.RichTextBox.BeginSuspendPaintingCore() -> void
 override System.Windows.Forms.RichTextBox.EndSuspendPaintingCore() -> void
+override System.Windows.Forms.RichTextBox.OnEnabledChanged(System.EventArgs! e) -> void
 override System.Windows.Forms.TreeView.BeginSuspendPaintingCore() -> void
 override System.Windows.Forms.TreeView.EndSuspendPaintingCore() -> void
 System.Windows.Forms.Appearance.ToggleSwitch = 2 -> System.Windows.Forms.Appearance
@@ -133,3 +144,15 @@ System.Windows.Forms.KioskModeManager.ToggleFullScreenKeys.get -> System.Windows
 System.Windows.Forms.KioskModeManager.ToggleFullScreenKeys.set -> void
 System.Windows.Forms.KioskModeManager.TopMostInFullScreen.get -> bool
 System.Windows.Forms.KioskModeManager.TopMostInFullScreen.set -> void
+System.Windows.Forms.ColumnDropDownClickEventArgs
+System.Windows.Forms.ColumnDropDownClickEventArgs.ColumnDropDownClickEventArgs(int column, System.Drawing.Point screenLocation) -> void
+System.Windows.Forms.ColumnDropDownClickEventArgs.ScreenLocation.get -> System.Drawing.Point
+System.Windows.Forms.ColumnDropDownClickEventArgs.ScreenLocation.set -> void
+System.Windows.Forms.ColumnHeader.FixedWidth.get -> bool
+System.Windows.Forms.ColumnHeader.FixedWidth.set -> void
+System.Windows.Forms.ColumnHeader.MinimumWidth.get -> int
+System.Windows.Forms.ColumnHeader.MinimumWidth.set -> void
+System.Windows.Forms.ColumnHeader.SplitButton.get -> bool
+System.Windows.Forms.ColumnHeader.SplitButton.set -> void
+System.Windows.Forms.ListView.ColumnDropDownClicked -> System.EventHandler<System.Windows.Forms.ColumnDropDownClickEventArgs!>?
+System.Windows.Forms.ListView.OnColumnDropDownClicked(System.Windows.Forms.ColumnDropDownClickEventArgs! e) -> void

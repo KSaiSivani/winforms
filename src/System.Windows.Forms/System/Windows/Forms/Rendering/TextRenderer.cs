@@ -450,9 +450,9 @@ public static class TextRenderer
 
         if (!WantsOutputText(flags))
         {
+            DrawTextInternal(dc, text, font, bounds, foreColor, backColor, flags);
             text.CopyTo(outputTextBuffer);
             outputTextLength = text.Length;
-            DrawTextInternal(dc, text, font, bounds, foreColor, backColor, flags);
             return;
         }
 
@@ -512,9 +512,10 @@ public static class TextRenderer
 
         if (!WantsOutputText(flags))
         {
+            Size size = MeasureTextInternal(dc, text, font, proposedSize, flags);
             text.CopyTo(outputTextBuffer);
             outputTextLength = text.Length;
-            return MeasureTextInternal(dc, text, font, proposedSize, flags);
+            return size;
         }
 
         if (text.IsEmpty)
@@ -563,9 +564,10 @@ public static class TextRenderer
 
         if (!WantsOutputText(flags))
         {
+            Size size = MeasureTextInternal(text, font, proposedSize, flags);
             text.CopyTo(outputTextBuffer);
             outputTextLength = text.Length;
-            return MeasureTextInternal(text, font, proposedSize, flags);
+            return size;
         }
 
         if (text.IsEmpty)

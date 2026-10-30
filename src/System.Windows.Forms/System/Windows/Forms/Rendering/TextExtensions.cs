@@ -135,7 +135,13 @@ internal static class TextExtensions
 
         DRAWTEXTPARAMS dtparams = GetTextMargins(font, padding);
 
-        bounds = AdjustForVerticalAlignment(hdc, text[..textLength], bounds, dt, &dtparams);
+        // Alignment measurement must not modify the buffer before drawing.
+        bounds = AdjustForVerticalAlignment(
+            hdc,
+            text[..textLength],
+            bounds,
+            dt & ~DRAW_TEXT_FORMAT.DT_MODIFYSTRING,
+            &dtparams);
 
         // Adjust unbounded rect to avoid overflow.
         if (bounds.Width == int.MaxValue)

@@ -645,6 +645,117 @@ public class TextRendererTests
     }
 
     [WinFormsTheory]
+    [InlineData(TextFormatFlags.VerticalCenter)]
+    [InlineData(TextFormatFlags.Bottom)]
+    public void TextRenderer_DrawText_WithOutputVerticalAlignment_RendersSameAsWithoutOutput(TextFormatFlags alignment)
+    {
+        const string Text = @"C:\verylongfolder\anotherfolder\filename.txt";
+        TextFormatFlags flags = TextFormatFlags.WordEllipsis | TextFormatFlags.NoPadding | alignment;
+        using Bitmap expected = new(70, 100);
+        using Bitmap actual = new(expected.Width, expected.Height);
+        using Graphics expectedGraphics = Graphics.FromImage(expected);
+        using Graphics actualGraphics = Graphics.FromImage(actual);
+        expectedGraphics.Clear(Color.White);
+        actualGraphics.Clear(Color.White);
+        Rectangle bounds = new(Point.Empty, expected.Size);
+
+        TextRenderer.DrawText(expectedGraphics, Text, SystemFonts.DefaultFont, bounds, Color.Black, Color.Empty, flags);
+        TextRenderer.DrawText(actualGraphics, Text, SystemFonts.DefaultFont, bounds, Color.Black, Color.Empty, flags, out _);
+
+        for (int y = 0; y < expected.Height; y++)
+        {
+            for (int x = 0; x < expected.Width; x++)
+            {
+                Assert.Equal(expected.GetPixel(x, y), actual.GetPixel(x, y));
+            }
+        }
+    }
+
+    [WinFormsTheory]
+    [InlineData(0, 1)]
+    [InlineData(1, 0)]
+    public void TextRenderer_DrawText_WithOutputOverlappingSpans_RendersInput(int inputOffset, int outputOffset)
+    {
+        const string Text = "Wiiiii";
+        char[] buffer = new char[Text.Length + 1];
+        Text.AsSpan().CopyTo(buffer.AsSpan(inputOffset));
+        TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+        using Bitmap expected = new(100, 30);
+        using Bitmap actual = new(expected.Width, expected.Height);
+        using Graphics expectedGraphics = Graphics.FromImage(expected);
+        using Graphics actualGraphics = Graphics.FromImage(actual);
+        expectedGraphics.Clear(Color.White);
+        actualGraphics.Clear(Color.White);
+        Rectangle bounds = new(Point.Empty, expected.Size);
+
+        TextRenderer.DrawText(expectedGraphics, Text, SystemFonts.DefaultFont, bounds, Color.Black, Color.Empty, flags);
+        TextRenderer.DrawText(
+            actualGraphics,
+            buffer.AsSpan(inputOffset, Text.Length),
+            SystemFonts.DefaultFont,
+            bounds,
+            Color.Black,
+            Color.Empty,
+            flags,
+            buffer.AsSpan(outputOffset, Text.Length),
+            out int outputTextLength);
+
+        Assert.Equal(Text, new string(buffer, outputOffset, outputTextLength));
+        for (int y = 0; y < expected.Height; y++)
+        {
+            for (int x = 0; x < expected.Width; x++)
+            {
+                Assert.Equal(expected.GetPixel(x, y), actual.GetPixel(x, y));
+            }
+        }
+    }
+
+    [WinFormsTheory]
+    [InlineData(0, 1, false)]
+    [InlineData(1, 0, false)]
+    [InlineData(0, 1, true)]
+    [InlineData(1, 0, true)]
+    public void TextRenderer_MeasureText_WithOutputOverlappingSpans_MeasuresInput(int inputOffset, int outputOffset, bool useDeviceContext)
+    {
+        const string Text = "Wiiiii";
+        char[] buffer = new char[Text.Length + 1];
+        Text.AsSpan().CopyTo(buffer.AsSpan(inputOffset));
+        TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+        using Bitmap image = new(100, 30);
+        using Graphics graphics = Graphics.FromImage(image);
+        Size expected;
+        Size actual;
+        int outputTextLength;
+
+        if (useDeviceContext)
+        {
+            expected = TextRenderer.MeasureText(graphics, Text, SystemFonts.DefaultFont, image.Size, flags);
+            actual = TextRenderer.MeasureText(
+                graphics,
+                buffer.AsSpan(inputOffset, Text.Length),
+                SystemFonts.DefaultFont,
+                image.Size,
+                flags,
+                buffer.AsSpan(outputOffset, Text.Length),
+                out outputTextLength);
+        }
+        else
+        {
+            expected = TextRenderer.MeasureText(Text, SystemFonts.DefaultFont, image.Size, flags);
+            actual = TextRenderer.MeasureText(
+                buffer.AsSpan(inputOffset, Text.Length),
+                SystemFonts.DefaultFont,
+                image.Size,
+                flags,
+                buffer.AsSpan(outputOffset, Text.Length),
+                out outputTextLength);
+        }
+
+        Assert.Equal(expected, actual);
+        Assert.Equal(Text, new string(buffer, outputOffset, outputTextLength));
+    }
+
+    [WinFormsTheory]
     [InlineData(TextFormatFlags.PathEllipsis)]
     [InlineData(TextFormatFlags.WordEllipsis)]
     public void TextRenderer_DrawText_WithEllipsisOutput_ReturnsRenderedText(TextFormatFlags ellipsis)
