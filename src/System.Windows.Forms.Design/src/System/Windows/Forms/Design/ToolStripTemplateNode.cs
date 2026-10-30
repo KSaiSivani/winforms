@@ -1731,13 +1731,13 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
     {
         private int _state = (int)TemplateNodeSelectionState.None;
         private readonly Color _selectedBorderColor;
-        private readonly Color _defaultBorderColor;
-        private readonly Color _dropDownMouseOverColor;
-        private readonly Color _dropDownMouseDownColor;
-        private readonly Color _toolStripBorderColor;
-        private readonly Color _labelBorderColor;
-        private readonly Color _labelForeColor;
-        private readonly bool _isDarkMode;
+        private  Color _defaultBorderColor;
+        private  Color _dropDownMouseOverColor;
+        private  Color _dropDownMouseDownColor;
+        private  Color _toolStripBorderColor;
+        private  Color _labelBorderColor;
+        private  Color _labelForeColor;
+        private  bool? _isDarkMode;
         private readonly ToolStripTemplateNode _owner;
         private Rectangle _hotRegion = Rectangle.Empty;
 
@@ -1745,10 +1745,20 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         {
             // Add Colors
             _owner = owner;
-            _isDarkMode = Application.IsDarkModeEnabled;
+            //_isDarkMode = Application.IsDarkModeEnabled;
             _selectedBorderColor = Color.FromArgb(46, 106, 197);
+            UpdateColors();
+        }
 
-            if (_isDarkMode)
+        private void UpdateColors()
+        {
+            bool isDarkMode = Application.IsDarkModeEnabled;
+            if(_isDarkMode == isDarkMode)
+            {
+                return;
+            }
+
+            if (isDarkMode)
             {
                 _defaultBorderColor = Color.FromArgb(140, 140, 140);
                 _dropDownMouseOverColor = Color.FromArgb(70, 70, 70);
@@ -1766,6 +1776,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
                 _labelBorderColor = Color.Black;
                 _labelForeColor = _defaultBorderColor;
             }
+            _isDarkMode = isDarkMode;
         }
 
         /// <summary>
@@ -1822,6 +1833,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
 
         protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
         {
+            UpdateColors();
             if (_owner._component is MenuStrip or ToolStripDropDownItem)
             {
                 Graphics g = e.Graphics;
@@ -1838,6 +1850,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         /// </summary>
         protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
         {
+            UpdateColors();
             Graphics g = e.Graphics;
             Rectangle bounds = new(Point.Empty, e.ToolStrip.Size);
             Pen selectborderPen = new(_toolStripBorderColor);
@@ -1851,6 +1864,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         /// </summary>
         protected override void OnRenderLabelBackground(ToolStripItemRenderEventArgs e)
         {
+            UpdateColors();
             base.OnRenderLabelBackground(e);
             ToolStripItem item = e.Item;
             Graphics g = e.Graphics;
@@ -1900,6 +1914,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
                 DrawDropDown(g, item, _hotRegion, _state);
                 borderPen.Color = _labelBorderColor;
                 borderPen.DashStyle = DashStyle.Dot;
+                item.ForeColor = _labelForeColor;
                 g.DrawRectangle(borderPen, drawRect);
             }
 
@@ -1937,6 +1952,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         /// </summary>
         protected override void OnRenderSplitButtonBackground(ToolStripItemRenderEventArgs e)
         {
+            UpdateColors();
             // DON'T CALL THE BASE AS IT DOESNT ALLOW US TO RENDER THE DROPDOWN BUTTON ....
             // base.OnRenderSplitButtonBackground(e);
             Graphics g = e.Graphics;
@@ -2011,6 +2027,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
+            UpdateColors();
             ToolStripItem item = e.Item as ToolStripLabel;
             if (item is not null && string.Equals(item.Name, CenterLabelName, StringComparison.InvariantCulture))
             {
@@ -2019,7 +2036,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
                     // "Type Here" node always has white background, text should be painted in black
                     e.TextColor = Color.Black;
                 }
-                else if (_isDarkMode)
+                else if (_isDarkMode is true)
                 {
                     e.TextColor = _labelForeColor;
                 }
