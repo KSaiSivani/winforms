@@ -3,6 +3,7 @@
 
 #nullable disable
 
+using System.Collections;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
@@ -3550,6 +3551,134 @@ public partial class DataGridViewTests : IDisposable
         _dataGridView.Sorted -= handler;
         _dataGridView.Sort(_dataGridView.Columns[0], ListSortDirection.Descending);
         callCount.Should().Be(1);
+    }
+
+    [WinFormsTheory]
+    [InlineData(ListSortDirection.Ascending, ListSortDirection.Ascending, false, false, new[] { "1", "2", "5", "3", "4", "6" })]
+    [InlineData(ListSortDirection.Ascending, ListSortDirection.Ascending, true, true, new[] { "1", "2", "5", "3", "4", "6" })]
+    [InlineData(ListSortDirection.Ascending, ListSortDirection.Descending, false, true, new[] { "3", "4", "6", "1", "2", "5" })]
+    [InlineData(ListSortDirection.Ascending, ListSortDirection.Descending, true, false, new[] { "3", "4", "6", "1", "2", "5" })]
+    [InlineData(ListSortDirection.Descending, ListSortDirection.Ascending, false, true, new[] { "5", "2", "1", "6", "4", "3" })]
+    [InlineData(ListSortDirection.Descending, ListSortDirection.Ascending, true, false, new[] { "5", "2", "1", "6", "4", "3" })]
+    [InlineData(ListSortDirection.Descending, ListSortDirection.Descending, false, false, new[] { "6", "4", "3", "5", "2", "1" })]
+    [InlineData(ListSortDirection.Descending, ListSortDirection.Descending, true, true, new[] { "6", "4", "3", "5", "2", "1" })]
+    public void DataGridView_Sort_UnboundRowsPreservesPreviousOrder(
+        ListSortDirection firstSortDirection,
+        ListSortDirection secondSortDirection,
+        bool allowUserToAddRows,
+        bool createHandle,
+        string[] expectedOrder)
+    {
+        InitializeRowsForStableSort(allowUserToAddRows, createHandle);
+
+        _dataGridView.Sort(_dataGridView.Columns[0], firstSortDirection);
+        _dataGridView.Sort(_dataGridView.Columns[1], secondSortDirection);
+
+        AssertStableSortOrder(expectedOrder, createHandle);
+
+        _dataGridView.Sort(_dataGridView.Columns[1], secondSortDirection);
+
+        AssertStableSortOrder(expectedOrder, createHandle);
+    }
+
+    [WinFormsTheory]
+    [InlineData(ListSortDirection.Ascending, new[] { "1", "2", "5", "3", "4", "6" })]
+    [InlineData(ListSortDirection.Descending, new[] { "3", "4", "6", "1", "2", "5" })]
+    public void DataGridView_Sort_WithSortComparePreservesPreviousOrder(
+        ListSortDirection direction,
+        string[] expectedOrder)
+    {
+        InitializeRowsForStableSort(allowUserToAddRows: true, createHandle: false);
+        _dataGridView.Sort(_dataGridView.Columns[0], ListSortDirection.Ascending);
+
+        int comparisonCount = 0;
+        _dataGridView.SortCompare += (sender, e) =>
+        {
+            Assert.Equal(_dataGridView.Rows[e.RowIndex1].Cells[e.Column.Index].Value, e.CellValue1);
+            Assert.Equal(_dataGridView.Rows[e.RowIndex2].Cells[e.Column.Index].Value, e.CellValue2);
+            e.SortResult = Comparer.Default.Compare(e.CellValue1, e.CellValue2);
+            e.Handled = true;
+            comparisonCount++;
+        };
+
+        _dataGridView.Sort(_dataGridView.Columns[1], direction);
+
+        Assert.True(comparisonCount > 0);
+        AssertStableSortOrder(expectedOrder, isHandleCreated: false);
+    }
+
+    [WinFormsTheory]
+    [InlineData(ListSortDirection.Ascending, new[] { "1", "2", "5", "3", "4", "6" })]
+    [InlineData(ListSortDirection.Descending, new[] { "3", "4", "6", "1", "2", "5" })]
+    public void DataGridView_Sort_WithCustomComparerPreservesPreviousOrder(
+        ListSortDirection direction,
+        string[] expectedOrder)
+    {
+        InitializeRowsForStableSort(allowUserToAddRows: true, createHandle: true);
+        _dataGridView.Sort(_dataGridView.Columns[0], ListSortDirection.Ascending);
+        Comparer<DataGridViewRow> comparer = Comparer<DataGridViewRow>.Create((row1, row2) =>
+        {
+            int result = Comparer.Default.Compare(row1.Cells[1].Value, row2.Cells[1].Value);
+            return direction == ListSortDirection.Ascending ? result : -result;
+        });
+
+        _dataGridView.Sort(comparer);
+
+        AssertStableSortOrder(expectedOrder, isHandleCreated: true);
+    }
+
+    [WinFormsTheory]
+    [InlineData(ListSortDirection.Ascending, new[] { "1", "2", "5", "3", "4", "6" })]
+    [InlineData(ListSortDirection.Descending, new[] { "3", "4", "6", "1", "2", "5" })]
+    public void DataGridView_Sort_WithNullValuesPreservesPreviousOrder(
+        ListSortDirection direction,
+        string[] expectedOrder)
+    {
+        InitializeRowsForStableSort(allowUserToAddRows: false, createHandle: false);
+        foreach (DataGridViewRow row in _dataGridView.Rows)
+        {
+            if (Equals(row.Cells[1].Value, "A"))
+            {
+                row.Cells[1].Value = null;
+            }
+        }
+
+        _dataGridView.Sort(_dataGridView.Columns[0], ListSortDirection.Ascending);
+        _dataGridView.Sort(_dataGridView.Columns[1], direction);
+
+        AssertStableSortOrder(expectedOrder, isHandleCreated: false);
+    }
+
+    private void InitializeRowsForStableSort(bool allowUserToAddRows, bool createHandle)
+    {
+        _dataGridView.AllowUserToAddRows = allowUserToAddRows;
+        _dataGridView.Columns.Add("First", "First");
+        _dataGridView.Columns.Add("Second", "Second");
+        _dataGridView.Rows.Add("3", "B");
+        _dataGridView.Rows.Add("1", "A");
+        _dataGridView.Rows.Add("4", "B");
+        _dataGridView.Rows.Add("2", "A");
+        _dataGridView.Rows.Add("6", "B");
+        _dataGridView.Rows.Add("5", "A");
+
+        if (createHandle)
+        {
+            Assert.NotEqual(IntPtr.Zero, _dataGridView.Handle);
+        }
+    }
+
+    private void AssertStableSortOrder(string[] expectedOrder, bool isHandleCreated)
+    {
+        string[] actualOrder = _dataGridView.Rows
+            .Cast<DataGridViewRow>()
+            .Where(row => !row.IsNewRow)
+            .Select(row => (string)row.Cells[0].Value!)
+            .ToArray();
+
+        Assert.Equal(expectedOrder, actualOrder);
+        Assert.Equal(expectedOrder.Length + (_dataGridView.AllowUserToAddRows ? 1 : 0), _dataGridView.RowCount);
+        Assert.Equal(_dataGridView.AllowUserToAddRows ? expectedOrder.Length : -1, _dataGridView.NewRowIndex);
+        Assert.Equal(isHandleCreated, _dataGridView.IsHandleCreated);
     }
 
     [WinFormsFact]

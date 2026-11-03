@@ -60,7 +60,13 @@ public partial class DataGridViewRowCollection
             }
         }
 
-        internal int CompareObjects(object? value1, object? value2, int rowIndex1, int rowIndex2)
+        internal int CompareObjects(
+            object? value1,
+            object? value2,
+            int rowIndex1,
+            int rowIndex2,
+            int originalRowIndex1,
+            int originalRowIndex2)
         {
             if (value1 is ComparedObjectMax)
             {
@@ -113,18 +119,6 @@ public partial class DataGridViewRowCollection
                     {
                         result = Comparer.Default.Compare(value1, value2);
                     }
-
-                    if (result == 0)
-                    {
-                        if (_ascending)
-                        {
-                            result = rowIndex1 - rowIndex2;
-                        }
-                        else
-                        {
-                            result = rowIndex2 - rowIndex1;
-                        }
-                    }
                 }
             }
             else
@@ -137,14 +131,14 @@ public partial class DataGridViewRowCollection
                 result = _customComparer.Compare(value1, value2);
             }
 
-            if (_ascending)
+            if (!_ascending)
             {
-                return result;
+                result = -result;
             }
-            else
-            {
-                return -result;
-            }
+
+            return result != 0
+                ? result
+                : originalRowIndex1.CompareTo(originalRowIndex2);
         }
     }
 }

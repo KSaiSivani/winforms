@@ -8,6 +8,7 @@ public partial class DataGridViewRowCollection
     private class RowList : List<DataGridViewRow>
     {
         private readonly DataGridViewRowCollection _owner;
+        private int[]? _originalRowIndexes;
         private RowComparer? _rowComparer;
 
         public RowList(DataGridViewRowCollection owner)
@@ -21,7 +22,21 @@ public partial class DataGridViewRowCollection
             Debug.Assert(Count > 0);
 
             _rowComparer = rowComparer;
-            CustomQuickSort(0, Count - 1);
+            _originalRowIndexes = new int[Count];
+            for (int i = 0; i < Count; i++)
+            {
+                _originalRowIndexes[i] = i;
+            }
+
+            try
+            {
+                CustomQuickSort(0, Count - 1);
+            }
+            finally
+            {
+                _originalRowIndexes = null;
+                _rowComparer = null;
+            }
         }
 
         private void CustomQuickSort(int left, int right)
@@ -35,9 +50,9 @@ public partial class DataGridViewRowCollection
             {
                 if (right - left < 2) // sort subarray of two elements
                 {
-                    if (right - left > 0 && _rowComparer!.CompareObjects(_rowComparer.GetComparedObject(left), _rowComparer.GetComparedObject(right), left, right) > 0)
+                    if (right - left > 0 && CompareRows(left, right) > 0)
                     {
-                        _owner.SwapSortedRows(left, right);
+                        SwapRows(left, right);
                     }
 
                     return;
@@ -49,12 +64,12 @@ public partial class DataGridViewRowCollection
                 int j = right - 1;
                 do
                 {
-                    while (k != i && _rowComparer!.CompareObjects(_rowComparer.GetComparedObject(i), x, i, k) < 0)
+                    while (k != i && CompareRows(i, _rowComparer!.GetComparedObject(i), k, x) < 0)
                     {
                         i++;
                     }
 
-                    while (k != j && _rowComparer!.CompareObjects(x, _rowComparer.GetComparedObject(j), k, j) < 0)
+                    while (k != j && CompareRows(k, x, j, _rowComparer!.GetComparedObject(j)) < 0)
                     {
                         j--;
                     }
@@ -67,7 +82,7 @@ public partial class DataGridViewRowCollection
 
                     if (i < j)
                     {
-                        _owner.SwapSortedRows(i, j);
+                        SwapRows(i, j);
                         if (i == k)
                         {
                             k = j;
@@ -108,22 +123,45 @@ public partial class DataGridViewRowCollection
         private object? Pivot(int left, int center, int right)
         {
             // find median-of-3 (left, center and right) and sort these 3 elements
-            if (_rowComparer!.CompareObjects(_rowComparer.GetComparedObject(left), _rowComparer.GetComparedObject(center), left, center) > 0)
+            if (CompareRows(left, center) > 0)
             {
-                _owner.SwapSortedRows(left, center);
+                SwapRows(left, center);
             }
 
-            if (_rowComparer.CompareObjects(_rowComparer.GetComparedObject(left), _rowComparer.GetComparedObject(right), left, right) > 0)
+            if (CompareRows(left, right) > 0)
             {
-                _owner.SwapSortedRows(left, right);
+                SwapRows(left, right);
             }
 
-            if (_rowComparer.CompareObjects(_rowComparer.GetComparedObject(center), _rowComparer.GetComparedObject(right), center, right) > 0)
+            if (CompareRows(center, right) > 0)
             {
-                _owner.SwapSortedRows(center, right);
+                SwapRows(center, right);
             }
 
-            return _rowComparer.GetComparedObject(center);
+            return _rowComparer!.GetComparedObject(center);
+        }
+
+        private int CompareRows(int rowIndex1, int rowIndex2) =>
+            CompareRows(
+                rowIndex1,
+                _rowComparer!.GetComparedObject(rowIndex1),
+                rowIndex2,
+                _rowComparer.GetComparedObject(rowIndex2));
+
+        private int CompareRows(int rowIndex1, object? value1, int rowIndex2, object? value2) =>
+            _rowComparer!.CompareObjects(
+                value1,
+                value2,
+                rowIndex1,
+                rowIndex2,
+                _originalRowIndexes![rowIndex1],
+                _originalRowIndexes[rowIndex2]);
+
+        private void SwapRows(int rowIndex1, int rowIndex2)
+        {
+            _owner.SwapSortedRows(rowIndex1, rowIndex2);
+            (_originalRowIndexes![rowIndex1], _originalRowIndexes[rowIndex2]) =
+                (_originalRowIndexes[rowIndex2], _originalRowIndexes[rowIndex1]);
         }
     }
 }
