@@ -29,6 +29,12 @@ internal readonly ref struct CreatePenScope
     public CreatePenScope(Color color, int width = 1) =>
         HPEN = PInvokeCore.CreatePen(PEN_STYLE.PS_SOLID, width, color);
 
+    /// <summary>
+    ///  Creates a one-pixel pen with the specified style.
+    /// </summary>
+    public CreatePenScope(Color color, PEN_STYLE style) =>
+        HPEN = PInvokeCore.CreatePen(style, 1, color);
+
     public static implicit operator HPEN(in CreatePenScope scope) => scope.HPEN;
     public static unsafe implicit operator HGDIOBJ(in CreatePenScope scope) => scope.HPEN;
 

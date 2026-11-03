@@ -586,7 +586,7 @@ public static unsafe partial class ControlPaint
     {
         ArgumentNullException.ThrowIfNull(graphics);
 
-        DrawBorder(
+        DrawBorderCore(
             (IDeviceContext)graphics,
             bounds,
             leftColor, leftWidth, leftStyle,
@@ -595,15 +595,17 @@ public static unsafe partial class ControlPaint
             bottomColor, bottomWidth, bottomStyle);
     }
 
-    internal static unsafe void DrawBorder(
+    private static unsafe void DrawBorderCore(
         IDeviceContext deviceContext,
         Rectangle bounds,
         Color leftColor, int leftWidth, ButtonBorderStyle leftStyle,
         Color topColor, int topWidth, ButtonBorderStyle topStyle,
         Color rightColor, int rightWidth, ButtonBorderStyle rightStyle,
-        Color bottomColor, int bottomWidth, ButtonBorderStyle bottomStyle)
+        Color bottomColor, int bottomWidth, ButtonBorderStyle bottomStyle,
+        bool useGdi = false)
     {
         // Very general, and very slow
+        ArgumentNullException.ThrowIfNull(deviceContext);
         ArgumentOutOfRangeException.ThrowIfNegative(leftWidth);
         ArgumentOutOfRangeException.ThrowIfNegative(topWidth);
         ArgumentOutOfRangeException.ThrowIfNegative(rightWidth);
@@ -745,10 +747,10 @@ public static unsafe partial class ControlPaint
             case ButtonBorderStyle.Dashed:
             case ButtonBorderStyle.Solid:
                 {
-                    if (!topColor.HasTransparency() && topStyle == ButtonBorderStyle.Solid)
+                    if (useGdi || (!topColor.HasTransparency() && topStyle == ButtonBorderStyle.Solid))
                     {
                         using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
-                        using CreatePenScope hpen = new(topColor);
+                        using CreatePenScope hpen = new(topColor, BorderStyleToPenStyle(topStyle));
                         for (int i = 0; i < topWidth; i++)
                         {
                             // Need to add one to the destination point for GDI to render the same as GDI+
@@ -804,10 +806,10 @@ public static unsafe partial class ControlPaint
             case ButtonBorderStyle.Dashed:
             case ButtonBorderStyle.Solid:
                 {
-                    if (!leftColor.HasTransparency() && leftStyle == ButtonBorderStyle.Solid)
+                    if (useGdi || (!leftColor.HasTransparency() && leftStyle == ButtonBorderStyle.Solid))
                     {
                         using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
-                        using CreatePenScope hpen = new(leftColor);
+                        using CreatePenScope hpen = new(leftColor, BorderStyleToPenStyle(leftStyle));
                         for (int i = 0; i < leftWidth; i++)
                         {
                             // Need to add one to the destination point for GDI to render the same as GDI+
@@ -863,10 +865,10 @@ public static unsafe partial class ControlPaint
             case ButtonBorderStyle.Dashed:
             case ButtonBorderStyle.Solid:
                 {
-                    if (!bottomColor.HasTransparency() && bottomStyle == ButtonBorderStyle.Solid)
+                    if (useGdi || (!bottomColor.HasTransparency() && bottomStyle == ButtonBorderStyle.Solid))
                     {
                         using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
-                        using CreatePenScope hpen = new(bottomColor);
+                        using CreatePenScope hpen = new(bottomColor, BorderStyleToPenStyle(bottomStyle));
                         for (int i = 0; i < bottomWidth; i++)
                         {
                             // Need to add one to the destination point for GDI to render the same as GDI+
@@ -937,10 +939,10 @@ public static unsafe partial class ControlPaint
             case ButtonBorderStyle.Dashed:
             case ButtonBorderStyle.Solid:
                 {
-                    if (!rightColor.HasTransparency() && rightStyle == ButtonBorderStyle.Solid)
+                    if (useGdi || (!rightColor.HasTransparency() && rightStyle == ButtonBorderStyle.Solid))
                     {
                         using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
-                        using CreatePenScope hpen = new(rightColor);
+                        using CreatePenScope hpen = new(rightColor, BorderStyleToPenStyle(rightStyle));
                         for (int i = 0; i < rightWidth; i++)
                         {
                             // Need to add one to the destination point for GDI to render the same as GDI+
@@ -1969,11 +1971,23 @@ public static unsafe partial class ControlPaint
         }
     }
 
-    internal static void DrawSizeGrip(
+    /// <summary>
+    ///  Draws a size grip using GDI. The alpha component of <paramref name="backColor"/> is ignored.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="backColor">The background color used to shade the grip.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The grip width.</param>
+    /// <param name="height">The grip height.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawSizeGrip(
         IDeviceContext deviceContext,
         Color backColor,
         int x, int y, int width, int height)
     {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+
         // Note: We don't paint any background to facilitate transparency, background images, etc...
 
         // We only draw rectangular grips.
@@ -2674,5 +2688,824 @@ public static unsafe partial class ControlPaint
         }
 
         return flags;
+    }
+
+    /// <summary>
+    ///  Draws a border using GDI. Color alpha is ignored, including when the device context is a Graphics.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="bounds">The bounds of the border.</param>
+    /// <param name="color">The border color.</param>
+    /// <param name="style">The border style.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawBorder(IDeviceContext deviceContext, Rectangle bounds, Color color, ButtonBorderStyle style)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+
+        switch (style)
+        {
+            case ButtonBorderStyle.Dotted:
+            case ButtonBorderStyle.Dashed:
+            case ButtonBorderStyle.Solid:
+                using (DeviceContextHdcScope hdc = deviceContext.ToHdcScope())
+                using (SetBkModeScope background = new(hdc, BACKGROUND_MODE.TRANSPARENT))
+                using (CreatePenScope pen = new(color, BorderStyleToPenStyle(style)))
+                {
+                    hdc.DrawRectangle(bounds, pen);
+                }
+
+                break;
+            case ButtonBorderStyle.Inset:
+            case ButtonBorderStyle.Outset:
+                DrawGdiBorderComplex(deviceContext, bounds, color, style);
+                break;
+        }
+    }
+
+    /// <summary>
+    ///  Draws independently styled border edges using GDI. Color alpha is ignored.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="bounds">The bounds of the border.</param>
+    /// <param name="leftColor">The left edge color.</param>
+    /// <param name="leftWidth">The left edge width.</param>
+    /// <param name="leftStyle">The left edge style.</param>
+    /// <param name="topColor">The top edge color.</param>
+    /// <param name="topWidth">The top edge width.</param>
+    /// <param name="topStyle">The top edge style.</param>
+    /// <param name="rightColor">The right edge color.</param>
+    /// <param name="rightWidth">The right edge width.</param>
+    /// <param name="rightStyle">The right edge style.</param>
+    /// <param name="bottomColor">The bottom edge color.</param>
+    /// <param name="bottomWidth">The bottom edge width.</param>
+    /// <param name="bottomStyle">The bottom edge style.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">An edge width is negative.</exception>
+    public static void DrawBorder(
+        IDeviceContext deviceContext,
+        Rectangle bounds,
+        Color leftColor, int leftWidth, ButtonBorderStyle leftStyle,
+        Color topColor, int topWidth, ButtonBorderStyle topStyle,
+        Color rightColor, int rightWidth, ButtonBorderStyle rightStyle,
+        Color bottomColor, int bottomWidth, ButtonBorderStyle bottomStyle)
+        => DrawBorderCore(
+            deviceContext, bounds,
+            leftColor, leftWidth, leftStyle,
+            topColor, topWidth, topStyle,
+            rightColor, rightWidth, rightStyle,
+            bottomColor, bottomWidth, bottomStyle,
+            useGdi: true);
+
+    /// <summary>
+    ///  Draws an etched border using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The bounds of the border.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle)
+        => DrawBorder3D(deviceContext, rectangle, Border3DStyle.Etched);
+
+    /// <summary>
+    ///  Draws a three-dimensional border using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The bounds of the border.</param>
+    /// <param name="style">The border style.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle, Border3DStyle style)
+        => DrawBorder3D(deviceContext, rectangle, style, Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom);
+
+    /// <summary>
+    ///  Draws selected sides of a three-dimensional border using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The bounds of the border.</param>
+    /// <param name="style">The border style.</param>
+    /// <param name="sides">The sides of the border to draw.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawBorder3D(IDeviceContext deviceContext, Rectangle rectangle, Border3DStyle style, Border3DSide sides)
+        => DrawBorder3D(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, style, sides);
+
+    /// <summary>
+    ///  Draws an etched border using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The border width.</param>
+    /// <param name="height">The border height.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawBorder3D(IDeviceContext deviceContext, int x, int y, int width, int height)
+        => DrawBorder3D(deviceContext, x, y, width, height, Border3DStyle.Etched);
+
+    /// <summary>
+    ///  Draws a three-dimensional border using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The border width.</param>
+    /// <param name="height">The border height.</param>
+    /// <param name="style">The border style.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawBorder3D(IDeviceContext deviceContext, int x, int y, int width, int height, Border3DStyle style)
+        => DrawBorder3D(deviceContext, x, y, width, height, style, Border3DSide.Left | Border3DSide.Top | Border3DSide.Right | Border3DSide.Bottom);
+
+    /// <summary>
+    ///  Draws selected sides of a three-dimensional border using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The border width.</param>
+    /// <param name="height">The border height.</param>
+    /// <param name="style">The border style.</param>
+    /// <param name="sides">The sides of the border to draw.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawBorder3D(
+        IDeviceContext deviceContext,
+        int x, int y, int width, int height,
+        Border3DStyle style,
+        Border3DSide sides)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+
+        DRAWEDGE_FLAGS edge = (DRAWEDGE_FLAGS)((uint)style & 0x0F);
+        DRAW_EDGE_FLAGS flags = (DRAW_EDGE_FLAGS)sides | (DRAW_EDGE_FLAGS)((uint)style & ~0x0F);
+        RECT bounds = new Rectangle(x, y, width, height);
+        if (flags.HasFlag((DRAW_EDGE_FLAGS)Border3DStyle.Adjust))
+        {
+            Size border = SystemInformation.Border3DSize;
+            bounds.left -= border.Width;
+            bounds.right += border.Width;
+            bounds.top -= border.Height;
+            bounds.bottom += border.Height;
+            flags &= ~(DRAW_EDGE_FLAGS)Border3DStyle.Adjust;
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        PInvoke.DrawEdge(hdc, ref bounds, edge, flags);
+    }
+
+    /// <summary>
+    ///  Draws a classic Windows button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The button bounds.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    /// <summary>
+    ///  Draws a classic Windows button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The button width.</param>
+    /// <param name="height">The button height.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+        => DrawGdiFrameControl(deviceContext, x, y, width, height, DFC_TYPE.DFC_BUTTON, DFCS_STATE.DFCS_BUTTONPUSH | (DFCS_STATE)state);
+
+    /// <summary>
+    ///  Draws a window caption button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The button bounds.</param>
+    /// <param name="button">The caption button to draw.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawCaptionButton(IDeviceContext deviceContext, Rectangle rectangle, CaptionButton button, ButtonState state)
+        => DrawCaptionButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, button, state);
+
+    /// <summary>
+    ///  Draws a window caption button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The button width.</param>
+    /// <param name="height">The button height.</param>
+    /// <param name="button">The caption button to draw.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawCaptionButton(
+        IDeviceContext deviceContext,
+        int x, int y, int width, int height,
+        CaptionButton button,
+        ButtonState state)
+        => DrawGdiFrameControl(deviceContext, x, y, width, height, DFC_TYPE.DFC_CAPTION, (DFCS_STATE)button | (DFCS_STATE)state);
+
+    /// <summary>
+    ///  Draws a checkbox using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The checkbox bounds.</param>
+    /// <param name="state">The checkbox state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The dimensions are invalid for the specified state.</exception>
+    public static void DrawCheckBox(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawCheckBox(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    /// <summary>
+    ///  Draws a checkbox using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The checkbox width.</param>
+    /// <param name="height">The checkbox height.</param>
+    /// <param name="state">The checkbox state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The dimensions are invalid for the specified state.</exception>
+    public static void DrawCheckBox(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+    {
+        if ((state & ButtonState.Flat) == 0)
+        {
+            DrawGdiFrameControl(deviceContext, x, y, width, height, DFC_TYPE.DFC_BUTTON, DFCS_STATE.DFCS_BUTTONCHECK | (DFCS_STATE)state);
+            return;
+        }
+
+        DrawGdiFlatCheckBox(deviceContext, new Rectangle(x, y, width, height), state);
+    }
+
+    /// <summary>
+    ///  Draws a combo box dropdown button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The button bounds.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawComboButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawComboButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    /// <summary>
+    ///  Draws a combo box dropdown button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The button width.</param>
+    /// <param name="height">The button height.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawComboButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+        => DrawGdiFrameControl(deviceContext, x, y, width, height, DFC_TYPE.DFC_SCROLL, DFCS_STATE.DFCS_SCROLLCOMBOBOX | (DFCS_STATE)state);
+
+    /// <summary>
+    ///  Draws a container grab handle using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="bounds">The grab handle bounds.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawContainerGrabHandle(IDeviceContext deviceContext, Rectangle bounds)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using CreateBrushScope brush = new(Color.White);
+        hdc.FillRectangle(Rectangle.Inflate(bounds, -1, -1), brush);
+        using CreatePenScope pen = new(Color.Black);
+        int midx = bounds.X + bounds.Width / 2;
+        int midy = bounds.Y + bounds.Height / 2;
+        DrawGdiLine(hdc, pen, bounds.Left + 1, bounds.Top, bounds.Right - 2, bounds.Top);
+        DrawGdiLine(hdc, pen, bounds.Left + 1, bounds.Bottom - 1, bounds.Right - 2, bounds.Bottom - 1);
+        DrawGdiLine(hdc, pen, bounds.Left, bounds.Top + 1, bounds.Left, bounds.Bottom - 2);
+        DrawGdiLine(hdc, pen, bounds.Right - 1, bounds.Top + 1, bounds.Right - 1, bounds.Bottom - 2);
+        DrawGdiLine(hdc, pen, midx, bounds.Top, midx, bounds.Bottom - 2);
+        DrawGdiLine(hdc, pen, bounds.Left, midy, bounds.Right - 2, midy);
+        DrawGdiLine(hdc, pen, midx - 1, bounds.Top + 2, midx + 1, bounds.Top + 2);
+        DrawGdiLine(hdc, pen, midx - 2, bounds.Top + 3, midx + 2, bounds.Top + 3);
+        DrawGdiLine(hdc, pen, bounds.Left + 2, midy - 1, bounds.Left + 2, midy + 1);
+        DrawGdiLine(hdc, pen, bounds.Left + 3, midy - 2, bounds.Left + 3, midy + 2);
+        DrawGdiLine(hdc, pen, bounds.Right - 3, midy - 1, bounds.Right - 3, midy + 1);
+        DrawGdiLine(hdc, pen, bounds.Right - 4, midy - 2, bounds.Right - 4, midy + 2);
+        DrawGdiLine(hdc, pen, midx - 1, bounds.Bottom - 3, midx + 1, bounds.Bottom - 3);
+        DrawGdiLine(hdc, pen, midx - 2, bounds.Bottom - 4, midx + 2, bounds.Bottom - 4);
+    }
+
+    /// <summary>
+    ///  Draws a dotted focus rectangle using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The focus rectangle bounds.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawFocusRectangle(IDeviceContext deviceContext, Rectangle rectangle)
+        => DrawFocusRectangle(deviceContext, rectangle, SystemColors.ControlText, SystemColors.Control);
+
+    /// <summary>
+    ///  Draws a dotted focus rectangle using GDI. Color alpha is ignored.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The focus rectangle bounds.</param>
+    /// <param name="foreColor">The foreground color, retained for compatibility with the Graphics overload.</param>
+    /// <param name="backColor">The background color used to determine a contrasting focus color.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawFocusRectangle(IDeviceContext deviceContext, Rectangle rectangle, Color foreColor, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        Span<Rectangle> edges = stackalloc Rectangle[4];
+        int count = GetFrameRectangles(rectangle, Rectangle.Inflate(rectangle, -1, -1), edges);
+        bool dark = IsDark(backColor);
+        ReadOnlySpan<byte> pattern = (rectangle.X + rectangle.Y) % 2 == 1
+            ? [0x80, 0, 0x40, 0]
+            : [0x40, 0, 0x80, 0];
+        FillGdiPattern(
+            hdc, edges[..count], 2, 2, pattern,
+            dark ? backColor.InvertColor() : Color.Black,
+            dark ? Color.Black : null);
+    }
+
+    /// <summary>
+    ///  Draws a selection grab handle using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The grab handle bounds.</param>
+    /// <param name="primary">Whether this is the primary selection handle.</param>
+    /// <param name="enabled">Whether the handle is enabled.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawGrabHandle(IDeviceContext deviceContext, Rectangle rectangle, bool primary, bool enabled)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using CreateBrushScope brush = new(enabled ? primary ? Color.White : Color.Black : SystemColors.Control);
+        hdc.FillRectangle(new Rectangle(rectangle.X + 1, rectangle.Y + 1, rectangle.Width - 1, rectangle.Height - 1), brush);
+        using CreatePenScope pen = new(primary ? Color.Black : Color.White);
+        hdc.DrawRectangle(rectangle, pen);
+    }
+
+    /// <summary>
+    ///  Draws a grid of single-pixel dots using GDI. Color alpha is ignored.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="area">The area to fill with grid dots.</param>
+    /// <param name="pixelsBetweenDots">The horizontal and vertical dot spacing.</param>
+    /// <param name="backColor">The background color used to choose a contrasting dot color.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Either dot spacing is not positive.</exception>
+    public static void DrawGrid(IDeviceContext deviceContext, Rectangle area, Size pixelsBetweenDots, Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        if (pixelsBetweenDots.Width <= 0 || pixelsBetweenDots.Height <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pixelsBetweenDots));
+        }
+
+        int stride = checked((pixelsBetweenDots.Width + 15) / 16 * 2);
+        using BufferScope<byte> buffer = new(stackalloc byte[128], checked(stride * pixelsBetweenDots.Height));
+        Span<byte> bits = buffer;
+        bits.Fill(0xFF);
+        bits[0] = 0x7F;
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        FillGdiPattern(hdc, [area], pixelsBetweenDots.Width, pixelsBetweenDots.Height, bits, IsDark(backColor) ? Color.White : Color.Black);
+    }
+
+    /// <summary>
+    ///  Draws a locked selection frame using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The frame bounds.</param>
+    /// <param name="primary">Whether this is the primary selection frame.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawLockedFrame(IDeviceContext deviceContext, Rectangle rectangle, bool primary)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using CreatePenScope outer = new(primary ? Color.White : Color.Black);
+        hdc.DrawRectangle(rectangle, outer);
+        rectangle.Inflate(-1, -1);
+        hdc.DrawRectangle(rectangle, outer);
+        rectangle.Inflate(-1, -1);
+        using CreatePenScope inner = new(primary ? Color.Black : Color.White);
+        hdc.DrawRectangle(rectangle, inner);
+    }
+
+    /// <summary>
+    ///  Draws a menu glyph using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The glyph bounds.</param>
+    /// <param name="glyph">The menu glyph to draw.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, Rectangle rectangle, MenuGlyph glyph)
+        => DrawMenuGlyph(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, glyph);
+
+    /// <summary>
+    ///  Draws a menu glyph using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The glyph width.</param>
+    /// <param name="height">The glyph height.</param>
+    /// <param name="glyph">The menu glyph to draw.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, int x, int y, int width, int height, MenuGlyph glyph)
+        => DrawGdiFrameControl(deviceContext, x, y, width, height, DFC_TYPE.DFC_MENU, (DFCS_STATE)glyph);
+
+    /// <summary>
+    ///  Draws a menu glyph with the specified colors using GDI. Color alpha is ignored.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The glyph bounds.</param>
+    /// <param name="glyph">The menu glyph to draw.</param>
+    /// <param name="foreColor">The color replacing black glyph pixels.</param>
+    /// <param name="backColor">The color replacing white glyph pixels.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawMenuGlyph(IDeviceContext deviceContext, Rectangle rectangle, MenuGlyph glyph, Color foreColor, Color backColor)
+        => DrawMenuGlyph(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, glyph, foreColor, backColor);
+
+    /// <summary>
+    ///  Draws a menu glyph with the specified colors using GDI. Color alpha is ignored.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The glyph width.</param>
+    /// <param name="height">The glyph height.</param>
+    /// <param name="glyph">The menu glyph to draw.</param>
+    /// <param name="foreColor">The color replacing black glyph pixels.</param>
+    /// <param name="backColor">The color replacing white glyph pixels.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawMenuGlyph(
+        IDeviceContext deviceContext,
+        int x, int y, int width, int height,
+        MenuGlyph glyph,
+        Color foreColor,
+        Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        ValidateGdiFrameSize(width, height);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        DrawGdiMenuGlyph(
+            hdc, new Rectangle(x, y, width, height), glyph,
+            foreColor.IsEmpty || backColor.IsEmpty ? Color.Black : foreColor,
+            foreColor.IsEmpty || backColor.IsEmpty ? Color.White : backColor);
+    }
+
+    /// <summary>
+    ///  Draws a three-state checkbox using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The checkbox bounds.</param>
+    /// <param name="state">The checkbox state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawMixedCheckBox(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawMixedCheckBox(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    /// <summary>
+    ///  Draws a three-state checkbox using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The checkbox width.</param>
+    /// <param name="height">The checkbox height.</param>
+    /// <param name="state">The checkbox state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawMixedCheckBox(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+        => DrawGdiFrameControl(deviceContext, x, y, width, height, DFC_TYPE.DFC_BUTTON, DFCS_STATE.DFCS_BUTTON3STATE | (DFCS_STATE)state);
+
+    /// <summary>
+    ///  Draws a radio button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The button bounds.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawRadioButton(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+        => DrawRadioButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, state);
+
+    /// <summary>
+    ///  Draws a radio button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The button width.</param>
+    /// <param name="height">The button height.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawRadioButton(IDeviceContext deviceContext, int x, int y, int width, int height, ButtonState state)
+        => DrawGdiFrameControl(deviceContext, x, y, width, height, DFC_TYPE.DFC_BUTTON, DFCS_STATE.DFCS_BUTTONRADIO | (DFCS_STATE)state);
+
+    /// <summary>
+    ///  Draws a classic scrollbar button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="rectangle">The button bounds.</param>
+    /// <param name="button">The scrollbar button to draw.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawScrollButton(IDeviceContext deviceContext, Rectangle rectangle, ScrollButton button, ButtonState state)
+        => DrawScrollButton(deviceContext, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, button, state);
+
+    /// <summary>
+    ///  Draws a classic scrollbar button using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="x">The left coordinate.</param>
+    /// <param name="y">The top coordinate.</param>
+    /// <param name="width">The button width.</param>
+    /// <param name="height">The button height.</param>
+    /// <param name="button">The scrollbar button to draw.</param>
+    /// <param name="state">The button state.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    /// <exception cref="ArgumentException">The width or height is not positive.</exception>
+    public static void DrawScrollButton(
+        IDeviceContext deviceContext,
+        int x, int y, int width, int height,
+        ScrollButton button,
+        ButtonState state)
+        => DrawGdiFrameControl(deviceContext, x, y, width, height, DFC_TYPE.DFC_SCROLL, (DFCS_STATE)button | (DFCS_STATE)state);
+
+    /// <summary>
+    ///  Draws a patterned selection frame using GDI. Color alpha is ignored.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="active">Whether to use the active selection pattern.</param>
+    /// <param name="outsideRect">The outside bounds of the frame.</param>
+    /// <param name="insideRect">The interior to leave unchanged.</param>
+    /// <param name="backColor">The background color used to choose a contrasting frame color.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawSelectionFrame(
+        IDeviceContext deviceContext,
+        bool active,
+        Rectangle outsideRect,
+        Rectangle insideRect,
+        Color backColor)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        Span<byte> bits = stackalloc byte[16];
+        bits.Fill(0xFF);
+        for (int y = 0; y < 8; y++)
+        {
+            for (int x = 0; x < 8; x++)
+            {
+                if (active ? (x + y) % 4 == 0 : x % 2 == 0 && y % 2 == (x / 2) % 2)
+                {
+                    bits[y * 2] &= (byte)~(0x80 >> x);
+                }
+            }
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        Span<Rectangle> edges = stackalloc Rectangle[4];
+        int count = GetFrameRectangles(outsideRect, insideRect, edges);
+        FillGdiPattern(
+            hdc, edges[..count], 8, 8, bits,
+            backColor.GetBrightness() <= .5 ? SystemColors.ControlLight : SystemColors.ControlDark);
+    }
+
+    /// <summary>
+    ///  Draws a size grip using GDI. Color alpha is ignored.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="backColor">The background color used to shade the grip.</param>
+    /// <param name="bounds">The grip bounds.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawSizeGrip(IDeviceContext deviceContext, Color backColor, Rectangle bounds)
+        => DrawSizeGrip(deviceContext, backColor, bounds.X, bounds.Y, bounds.Width, bounds.Height);
+
+    /// <summary>
+    ///  Draws a visual-style text control border using GDI.
+    /// </summary>
+    /// <param name="deviceContext">The device context to draw on.</param>
+    /// <param name="bounds">The border bounds.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="deviceContext"/> is null.</exception>
+    public static void DrawVisualStyleBorder(IDeviceContext deviceContext, Rectangle bounds)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using CreatePenScope pen = new(VisualStyles.VisualStyleInformation.TextControlBorder);
+        hdc.DrawRectangle(bounds.Left, bounds.Top, bounds.Right + 1, bounds.Bottom + 1, pen);
+    }
+
+    private static PEN_STYLE BorderStyleToPenStyle(ButtonBorderStyle style)
+        => style switch
+        {
+            ButtonBorderStyle.Dotted => PEN_STYLE.PS_DOT,
+            ButtonBorderStyle.Dashed => PEN_STYLE.PS_DASH,
+            _ => PEN_STYLE.PS_SOLID
+        };
+
+    private static void ValidateGdiFrameSize(int width, int height)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(width);
+        ArgumentOutOfRangeException.ThrowIfNegative(height);
+        if (width == 0 || height == 0)
+        {
+            // The Graphics overloads reject empty sizes when constructing their intermediate bitmap.
+            throw new ArgumentException(string.Format(SR.InvalidArgument, width == 0 ? nameof(width) : nameof(height), 0));
+        }
+    }
+
+    private static void DrawGdiFrameControl(
+        IDeviceContext deviceContext,
+        int x, int y, int width, int height,
+        DFC_TYPE kind,
+        DFCS_STATE state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        ValidateGdiFrameSize(width, height);
+        RECT bounds = new Rectangle(x, y, width, height);
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        using SaveDcScope savedState = new(hdc);
+        PInvokeCore.GetViewportOrgEx(hdc, out Point origin);
+        // Match the pattern phase of the Graphics overload's bitmap, whose origin is the button's top-left.
+        PInvoke.SetBrushOrgEx(hdc, origin.X + x, origin.Y + y, null);
+        PInvoke.DrawFrameControl(hdc, ref bounds, (uint)kind, (uint)state);
+    }
+
+    private static void DrawGdiMenuGlyph(HDC hdc, Rectangle bounds, MenuGlyph glyph, Color foreground, Color? background)
+    {
+        using CreateDcScope memory = new(hdc);
+        using CreateBitmapScope bitmap = new(bounds.Width, bounds.Height, 1, 1, null);
+        if (bitmap.IsNull)
+        {
+            throw new Win32Exception();
+        }
+
+        using SelectObjectScope selection = new(memory, bitmap);
+        RECT glyphBounds = new(bounds.Size);
+        PInvoke.DrawFrameControl(memory, ref glyphBounds, (uint)DFC_TYPE.DFC_MENU, (uint)glyph);
+        using SaveDcScope state = new(hdc);
+        if (background is Color backColor)
+        {
+            PInvokeCore.SetTextColor(hdc, foreground);
+            PInvokeCore.SetBkColor(hdc, backColor);
+            PInvokeCore.BitBlt(hdc, bounds.X, bounds.Y, bounds.Width, bounds.Height, memory, 0, 0, ROP_CODE.SRCCOPY);
+        }
+        else
+        {
+            using CreateBrushScope brush = new(foreground);
+            using SelectObjectScope brushSelection = new(hdc, brush);
+            PInvokeCore.SetTextColor(hdc, Color.Black);
+            PInvokeCore.SetBkColor(hdc, Color.White);
+            // D = P XOR ((D XOR P) AND S): black glyph pixels take the brush color; white pixels preserve D.
+            const ROP_CODE CopyGlyph = (ROP_CODE)0x00B8074A;
+            PInvokeCore.BitBlt(hdc, bounds.X, bounds.Y, bounds.Width, bounds.Height, memory, 0, 0, CopyGlyph);
+        }
+    }
+
+    private static void DrawGdiFlatCheckBox(IDeviceContext deviceContext, Rectangle rectangle, ButtonState state)
+    {
+        ArgumentNullException.ThrowIfNull(deviceContext);
+        if (rectangle.Width < 0 || rectangle.Height < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rectangle));
+        }
+
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        bool inactive = (state & ButtonState.Inactive) != 0;
+        Color background = inactive ? SystemColors.Control : SystemColors.Window;
+        Color foreground = inactive
+            ? SystemInformation.HighContrast ? SystemColors.GrayText : SystemColors.ControlDark
+            : SystemColors.ControlText;
+        Rectangle inner = Rectangle.Inflate(rectangle, -1, -1);
+        using CreateBrushScope brush = new(background);
+        hdc.FillRectangle(inner, brush);
+
+        if ((state & ButtonState.Checked) != 0)
+        {
+            ValidateGdiFrameSize(rectangle.Width, rectangle.Height);
+            rectangle.X++;
+            DrawGdiMenuGlyph(hdc, rectangle, MenuGlyph.Checkmark, foreground, background: null);
+        }
+
+        using CreatePenScope pen = new(SystemColors.ControlDark);
+        hdc.DrawRectangle(inner, pen);
+    }
+
+    private static void DrawGdiBorderComplex(IDeviceContext deviceContext, Rectangle bounds, Color color, ButtonBorderStyle style)
+    {
+        using DeviceContextHdcScope hdc = deviceContext.ToHdcScope();
+        bool inset = style == ButtonBorderStyle.Inset;
+        bool stock = color.ToKnownColor() == SystemColors.Control.ToKnownColor();
+        HLSColor hls = new(color);
+        using CreatePenScope topLeft = new(inset ? hls.Darker(1) : stock ? SystemColors.ControlLightLight : hls.Lighter(1));
+        using CreatePenScope bottomRight = new(inset ? hls.Lighter(1) : stock ? SystemColors.ControlDarkDark : hls.Darker(1));
+        DrawGdiLine(hdc, topLeft, bounds.Left, bounds.Top, bounds.Right - 1, bounds.Top);
+        DrawGdiLine(hdc, topLeft, bounds.Left, bounds.Top, bounds.Left, bounds.Bottom - 1);
+        DrawGdiLine(hdc, bottomRight, bounds.Left, bounds.Bottom - 1, bounds.Right - 1, bounds.Bottom - 1);
+        DrawGdiLine(hdc, bottomRight, bounds.Right - 1, bounds.Top, bounds.Right - 1, bounds.Bottom - 1);
+
+        using CreatePenScope innerTopLeft = new(inset
+            ? hls.Lighter(.5f)
+            : stock ? SystemInformation.HighContrast ? SystemColors.ControlLightLight : SystemColors.Control : color);
+        DrawGdiLine(hdc, innerTopLeft, bounds.Left + 1, bounds.Top + 1, bounds.Right - 2, bounds.Top + 1);
+        DrawGdiLine(hdc, innerTopLeft, bounds.Left + 1, bounds.Top + 1, bounds.Left + 1, bounds.Bottom - 2);
+        if (!inset || stock)
+        {
+            using CreatePenScope innerBottomRight = new(inset ? SystemColors.ControlLight : stock ? SystemColors.ControlDark : hls.Darker(.5f));
+            DrawGdiLine(hdc, innerBottomRight, bounds.Left + 1, bounds.Bottom - 2, bounds.Right - 2, bounds.Bottom - 2);
+            DrawGdiLine(hdc, innerBottomRight, bounds.Right - 2, bounds.Top + 1, bounds.Right - 2, bounds.Bottom - 2);
+        }
+    }
+
+    private static void DrawGdiLine(HDC hdc, HPEN pen, int x1, int y1, int x2, int y2)
+    {
+        // GDI excludes the endpoint. These axis-aligned lines include it, matching Graphics.DrawLine.
+        if (y1 == y2)
+        {
+            x2 += x2 >= x1 ? 1 : -1;
+        }
+        else
+        {
+            y2 += y2 >= y1 ? 1 : -1;
+        }
+
+        hdc.DrawLine(pen, x1, y1, x2, y2);
+    }
+
+    private static int GetFrameRectangles(Rectangle outside, Rectangle inside, Span<Rectangle> rectangles)
+    {
+        if (outside.Width <= 0 || outside.Height <= 0)
+        {
+            return 0;
+        }
+
+        inside.Intersect(outside);
+        if (inside.Width <= 0 || inside.Height <= 0)
+        {
+            rectangles[0] = outside;
+            return 1;
+        }
+
+        rectangles[0] = Rectangle.FromLTRB(outside.Left, outside.Top, outside.Right, inside.Top);
+        rectangles[1] = Rectangle.FromLTRB(outside.Left, inside.Bottom, outside.Right, outside.Bottom);
+        rectangles[2] = Rectangle.FromLTRB(outside.Left, inside.Top, inside.Left, inside.Bottom);
+        rectangles[3] = Rectangle.FromLTRB(inside.Right, inside.Top, outside.Right, inside.Bottom);
+        return 4;
+    }
+
+    private static void FillGdiPattern(
+        HDC hdc,
+        ReadOnlySpan<Rectangle> rectangles,
+        int width, int height,
+        ReadOnlySpan<byte> bits,
+        Color foreground,
+        Color? background = null)
+    {
+        fixed (byte* data = bits)
+        {
+            using CreateBitmapScope bitmap = new(width, height, 1, 1, data);
+            if (bitmap.IsNull)
+            {
+                throw new Win32Exception();
+            }
+
+            using ObjectScope brush = new(PInvoke.CreatePatternBrush(bitmap));
+            if (brush.HGDIOBJ.IsNull)
+            {
+                throw new Win32Exception();
+            }
+
+            using SaveDcScope state = new(hdc);
+            using SelectObjectScope selection = new(hdc, brush);
+            PInvokeCore.GetViewportOrgEx(hdc, out Point origin);
+            PInvoke.SetBrushOrgEx(hdc, origin.X, origin.Y, null);
+            foreach (Rectangle rectangle in rectangles)
+            {
+                if (rectangle.Width <= 0 || rectangle.Height <= 0)
+                {
+                    continue;
+                }
+
+                if (background is Color backColor)
+                {
+                    using CreateBrushScope backgroundBrush = new(backColor);
+                    hdc.FillRectangle(rectangle, backgroundBrush);
+                }
+
+                // Clear only the zero bits in the monochrome pattern, then OR in their foreground color.
+                const ROP_CODE MaskPattern = (ROP_CODE)0x00A000C9;
+                const ROP_CODE PaintPattern = (ROP_CODE)0x00FA0089;
+                PInvokeCore.SetTextColor(hdc, Color.Black);
+                PInvokeCore.SetBkColor(hdc, Color.White);
+                PInvoke.PatBlt(hdc, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, MaskPattern);
+                PInvokeCore.SetTextColor(hdc, foreground);
+                PInvokeCore.SetBkColor(hdc, Color.Black);
+                PInvoke.PatBlt(hdc, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height, PaintPattern);
+            }
+        }
     }
 }

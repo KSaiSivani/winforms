@@ -549,6 +549,7 @@ SendInput
 SendMessageCallback
 SendMessageTimeout
 SetActiveWindow
+SetBrushOrgEx
 SetCapture
 SetCursor
 SetCursorPos
