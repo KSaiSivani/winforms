@@ -2541,12 +2541,6 @@ public partial class RichTextBox : TextBoxBase
     {
         // base.OnHandleCreated is called somewhere in the middle of this
 
-        if (!IsHandleCreated)
-        {
-            base.OnHandleCreated(e);
-            return;
-        }
-
         _curSelStart = _curSelEnd = _curSelType = -1;
 
         // We will always set the control to use the maximum text, it defaults to 32k..
@@ -2588,11 +2582,6 @@ public partial class RichTextBox : TextBoxBase
 
         // base sets the Text property. It's important to do this *after* setting EM_AUTOUrlDETECT.
         base.OnHandleCreated(e);
-
-        if (!IsHandleCreated)
-        {
-            return;
-        }
 
         // For some reason, we need to set the OleCallback before setting the RTF property.
         UpdateOleCallback();
