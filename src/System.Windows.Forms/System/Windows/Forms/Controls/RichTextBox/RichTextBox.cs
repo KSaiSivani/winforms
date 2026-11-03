@@ -2477,44 +2477,6 @@ public partial class RichTextBox : TextBoxBase
         base.OnBackColorChanged(e);
     }
 
-    protected override void OnEnabledChanged(EventArgs e)
-    {
-        if (IsHandleCreated && Application.IsDarkModeEnabled)
-        {
-            if (Enabled)
-            {
-                PInvokeCore.SendMessage(this, PInvokeCore.EM_SETBKGNDCOLOR, 0, BackColor.ToWin32());
-                InternalSetForeColor(ForeColor);
-            }
-            else
-            {
-                // Background color for disabled dark-mode.
-                PInvokeCore.SendMessage(this, PInvokeCore.EM_SETBKGNDCOLOR, 0, SystemColors.ControlDark.ToWin32());
-
-                // Apply disabled text color via RichEdit char format (selection).
-                if (TextLength > 0)
-                {
-                    int gray = ColorTranslator.ToWin32(SystemColors.GrayText);
-                    CHARFORMAT2W cf = new()
-                    {
-                        cbSize = (uint)sizeof(CHARFORMAT2W),
-                        dwMask = CFM_MASK.CFM_COLOR,
-                        dwEffects = 0,
-                        crTextColor = gray,
-                    };
-
-                    // Apply format to entire document.
-                    // Use existing RichTextBox selection formatting helper.
-                    SetCharFormat(PInvoke.SCF_ALL, cf);
-                }
-            }
-
-            Invalidate();
-        }
-
-        base.OnEnabledChanged(e);
-    }
-
     protected override void OnRightToLeftChanged(EventArgs e)
     {
         base.OnRightToLeftChanged(e);

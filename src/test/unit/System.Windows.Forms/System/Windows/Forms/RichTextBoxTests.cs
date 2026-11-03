@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms.Automation;
 using System.Windows.Forms.TestUtilities;
+using Microsoft.DotNet.RemoteExecutor;
 using Moq;
 using Moq.Protected;
 using Windows.Win32.System.Ole;
@@ -734,6 +735,39 @@ public partial class RichTextBoxTests
         control.BackColor = Color.Red;
         Assert.Equal(Color.Red, control.BackColor);
         Assert.Equal(2, callCount);
+    }
+
+    [WinFormsFact]
+    public void RichTextBox_Enabled_DarkModeToggle_PreservesDocumentFormatting()
+    {
+        using RemoteInvokeHandle handle = RemoteExecutor.Invoke(() =>
+        {
+            if (SystemInformation.HighContrast)
+            {
+                return;
+            }
+
+            var applicationAccessor = typeof(Application).TestAccessor.Dynamic;
+            applicationAccessor.s_colorMode = SystemColorMode.Dark;
+            Assert.True(Application.IsDarkModeEnabled);
+
+            using RichTextBox control = new() { Text = "redblue" };
+            Assert.NotEqual(IntPtr.Zero, control.Handle);
+            control.Select(0, 3);
+            control.SelectionColor = Color.Red;
+            control.Select(3, 4);
+            control.SelectionColor = Color.Blue;
+            string originalRtf = control.Rtf;
+
+            control.Enabled = false;
+            Assert.Equal(originalRtf, control.Rtf);
+            control.Enabled = true;
+            Assert.Equal(originalRtf, control.Rtf);
+            control.Select(0, 3);
+            Assert.Equal(Color.Red.ToArgb(), control.SelectionColor.ToArgb());
+            control.Select(3, 4);
+            Assert.Equal(Color.Blue.ToArgb(), control.SelectionColor.ToArgb());
+        });
     }
 
     [WinFormsTheory]
