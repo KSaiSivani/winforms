@@ -57,10 +57,11 @@ public partial class RichTextBox : TextBoxBase
     private int _bulletIndent;
     private int _rightMargin;
     private string? _textRtf; // If not null, takes precedence over cached Text value
+    private bool _wasSizedToZero;
     private string? _textPlain;
     private Color _selectionBackColorToSetOnHandleCreated;
     private RichTextBoxLanguageOptions _languageOption = RichTextBoxLanguageOptions.AutoFont | RichTextBoxLanguageOptions.DualFont;
-    private bool _wasSizedToZero;
+
     // Non-persistent state
     //
     private static int s_logPixelsX;
@@ -107,6 +108,41 @@ public partial class RichTextBox : TextBoxBase
         AutoSize = false;
         _curSelStart = _curSelEnd = _curSelType = -1;
         InConstructor = false;
+    }
+
+    /// <summary>
+    ///  Refreshes the Rich Edit line cache after the control transitions from a zero-sized state
+    ///  back to a real size.
+    /// </summary>
+    /// <remarks>
+    ///  <para>
+    ///   Some Rich Edit versions can leave their cached line information stale after the control is
+    ///   minimized and then restored, especially if the text changed while minimized. Sending a pair
+    ///   of non-zero <c>WM_SIZE</c> messages forces the control to recompute the line cache.
+    ///  </para>
+    /// </remarks>
+    private void RefreshRichEditLineCache(int width, int height)
+    {
+        if (width <= 0 || height <= 0 || !IsHandleCreated)
+        {
+            return;
+        }
+
+        // WM_SIZE packs each dimension into 16 bits; keep the temporary width non-zero.
+        int refreshWidth = width == ushort.MaxValue ? width - 1 : width + 1;
+
+        // wParam 0 == SIZE_RESTORED, matching what a genuine, non-minimized resize sends.
+        PInvokeCore.SendMessage(
+            this,
+            PInvokeCore.WM_SIZE,
+            (WPARAM)0u,
+            PARAM.FromLowHigh(refreshWidth, height));
+
+        PInvokeCore.SendMessage(
+            this,
+            PInvokeCore.WM_SIZE,
+            (WPARAM)0u,
+            PARAM.FromLowHigh(width, height));
     }
 
     /// <summary>
@@ -2441,6 +2477,44 @@ public partial class RichTextBox : TextBoxBase
         base.OnBackColorChanged(e);
     }
 
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        if (IsHandleCreated && Application.IsDarkModeEnabled)
+        {
+            if (Enabled)
+            {
+                PInvokeCore.SendMessage(this, PInvokeCore.EM_SETBKGNDCOLOR, 0, BackColor.ToWin32());
+                InternalSetForeColor(ForeColor);
+            }
+            else
+            {
+                // Background color for disabled dark-mode.
+                PInvokeCore.SendMessage(this, PInvokeCore.EM_SETBKGNDCOLOR, 0, SystemColors.ControlDark.ToWin32());
+
+                // Apply disabled text color via RichEdit char format (selection).
+                if (TextLength > 0)
+                {
+                    int gray = ColorTranslator.ToWin32(SystemColors.GrayText);
+                    CHARFORMAT2W cf = new()
+                    {
+                        cbSize = (uint)sizeof(CHARFORMAT2W),
+                        dwMask = CFM_MASK.CFM_COLOR,
+                        dwEffects = 0,
+                        crTextColor = gray,
+                    };
+
+                    // Apply format to entire document.
+                    // Use existing RichTextBox selection formatting helper.
+                    SetCharFormat(PInvoke.SCF_ALL, cf);
+                }
+            }
+
+            Invalidate();
+        }
+
+        base.OnEnabledChanged(e);
+    }
+
     protected override void OnRightToLeftChanged(EventArgs e)
     {
         base.OnRightToLeftChanged(e);
@@ -2505,6 +2579,12 @@ public partial class RichTextBox : TextBoxBase
     {
         // base.OnHandleCreated is called somewhere in the middle of this
 
+        if (!IsHandleCreated)
+        {
+            base.OnHandleCreated(e);
+            return;
+        }
+
         _curSelStart = _curSelEnd = _curSelType = -1;
 
         // We will always set the control to use the maximum text, it defaults to 32k..
@@ -2546,6 +2626,11 @@ public partial class RichTextBox : TextBoxBase
 
         // base sets the Text property. It's important to do this *after* setting EM_AUTOUrlDETECT.
         base.OnHandleCreated(e);
+
+        if (!IsHandleCreated)
+        {
+            return;
+        }
 
         // For some reason, we need to set the OleCallback before setting the RTF property.
         UpdateOleCallback();
@@ -2697,27 +2782,6 @@ public partial class RichTextBox : TextBoxBase
         }
 
         return base.ProcessCmdKey(ref m, keyData);
-    }
-
-    private void RefreshRichEditLineCache(int width, int height)
-    {
-        if (width <= 0 || height <= 0 || !IsHandleCreated)
-        {
-            return;
-        }
-
-        // wParam 0 == SIZE_RESTORED, matching what a genuine, non-minimized resize sends.
-        PInvokeCore.SendMessage(
-            this,
-            PInvokeCore.WM_SIZE,
-            (WPARAM)0u,
-            PARAM.FromLowHigh(width + 1, height));
-
-        PInvokeCore.SendMessage(
-            this,
-            PInvokeCore.WM_SIZE,
-            (WPARAM)0u,
-            PARAM.FromLowHigh(width, height));
     }
 
     /// <summary>
@@ -3467,6 +3531,8 @@ public partial class RichTextBox : TextBoxBase
                         // Beep and disallow change for all other messages
                         default:
                             PInvoke.MessageBeep(MESSAGEBOX_STYLE.MB_OK);
+                                // Rebuild the line cache when the control is restored from a minimized or zero-sized
+                                // state so line indexing stays aligned with the current text.
                             break;
                     }
 
@@ -3550,6 +3616,27 @@ public partial class RichTextBox : TextBoxBase
     {
         switch (m.MsgInternal)
         {
+            case PInvokeCore.WM_SIZE:
+                {
+                    int width = m.LParamInternal.LOWORD;
+                    int height = m.LParamInternal.HIWORD;
+                    bool wasSizedToZero = _wasSizedToZero;
+                    _wasSizedToZero = width == 0 || height == 0;
+
+                    base.WndProc(ref m);
+
+                    // We were resized to 0 (e.g. the form was minimized) and are now being
+                    // resized back to a real size (the form was restored). Text may have been
+                    // removed while minimized, which leaves RichEdit's line cache stale —
+                    // force it to recompute. See RefreshRichEditLineCache for details.
+                    if (wasSizedToZero && !_wasSizedToZero)
+                    {
+                        RefreshRichEditLineCache(width, height);
+                    }
+
+                    break;
+                }
+
             case PInvokeCore.WM_PAINT:
 
                 // Important: We need to let to run the base
@@ -3605,9 +3692,9 @@ public partial class RichTextBox : TextBoxBase
                 //      change the cursor to a hand. It does this through a synchronous notification
                 //      message. So we have to pass the message to the DefWndProc first, and
                 //      then, if we receive a notification message in the meantime (indicated by
-                //      changing "LinkCursor", we set it to a hand. Otherwise, we call the
-                //      WM_SETCURSOR implementation on Control to set it to the user's selection for
-                //      the RichTextBox's cursor.
+                //      changing "LinkCursor", we set it to a hand. Keep the native cursor for
+                //      the uncustomized default; replacing it with an I-beam over selected text
+                //      causes flicker. Explicit and non-default cursors still use Control's handler.
                 LinkCursor = false;
                 DefWndProc(ref m);
                 if (LinkCursor && !Cursor.Equals(Cursors.WaitCursor))
@@ -3615,7 +3702,7 @@ public partial class RichTextBox : TextBoxBase
                     Cursor.Current = Cursors.Hand;
                     m.ResultInternal = (LRESULT)1;
                 }
-                else
+                else if (ShouldSerializeCursor() || !Cursor.Equals(Cursors.IBeam))
                 {
                     base.WndProc(ref m);
                 }
@@ -3688,23 +3775,6 @@ public partial class RichTextBox : TextBoxBase
                     else if (loWord == SCROLLBAR_COMMAND.SB_THUMBPOSITION)
                     {
                         OnHScroll(EventArgs.Empty);
-                    }
-
-                    break;
-                }
-
-            case PInvokeCore.WM_SIZE:
-                {
-                    int width = m.LParamInternal.LOWORD;
-                    int height = m.LParamInternal.HIWORD;
-                    bool wasSizedToZero = _wasSizedToZero;
-                    _wasSizedToZero = width == 0 || height == 0;
-
-                    base.WndProc(ref m);
-
-                    if (wasSizedToZero && !_wasSizedToZero)
-                    {
-                        RefreshRichEditLineCache(width, height);
                     }
 
                     break;

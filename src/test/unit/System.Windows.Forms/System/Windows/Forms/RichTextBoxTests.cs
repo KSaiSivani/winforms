@@ -8968,50 +8968,6 @@ public partial class RichTextBoxTests
         }
     }
 
-    [WinFormsFact]
-    public void RichTextBox_MinimizedFormTextRemoval_LinePositionsRemainConsistentAfterRestore()
-    {
-        using Form form = new() { ClientSize = new Size(400, 300) };
-        using RichTextBox control = new()
-        {
-            Dock = DockStyle.Fill,
-            WordWrap = false
-        };
-        form.Controls.Add(control);
-        form.Show();
-        Application.DoEvents();
-        
-        for (int i = 0; i < 5; i++)
-        {
-            control.AppendText($"line {i}: some sample text of varying length {new string('x', i * 3)}\n");
-        }
-        
-        string firstLine = control.Text[..(control.Text.IndexOf('\n') + 1)];
-        string expectedText = control.Text[firstLine.Length..];
-        
-        form.WindowState = FormWindowState.Minimized;
-        Application.DoEvents();
-        
-        control.Select(0, firstLine.Length);
-        control.SelectedRtf = "{\\rtf1\\ansi}";
-        
-        form.WindowState = FormWindowState.Normal;
-        Application.DoEvents();
-        
-        Assert.Equal(expectedText, control.Text);
-        
-        int expectedLineCount = 4;
-        Assert.Equal(expectedLineCount - 1, control.GetLineFromCharIndex(control.Text.Length - 1));
-        
-        int charIndex = 0;
-        for (int line = 0; line < expectedLineCount; line++)
-        {
-            Assert.Equal(charIndex, control.GetFirstCharIndexFromLine(line));
-            charIndex = control.Text.IndexOf('\n', charIndex) + 1;
-        }
-    }
- 
-
     [WinFormsTheory]
     [InlineData(ControlStyles.ContainerControl, false)]
     [InlineData(ControlStyles.UserPaint, false)]
@@ -10955,6 +10911,118 @@ public partial class RichTextBoxTests
 
             base.WndProc(ref m);
         }
+    }
+
+    [WinFormsFact]
+    public void RichTextBox_WmSize_NonZeroToNonZero_DoesNotAlterLinePositions()
+    {
+        // A normal resize between non-zero sizes must not go through the forced
+        // cache refresh, i.e. only the 0 -> non-zero transition triggers it.
+        using RichTextBox control = new() { WordWrap = false };
+        control.CreateControl();
+
+        control.AppendText("line 01: alpha\n");
+        control.AppendText("line 02: beta\n");
+        control.AppendText("line 03: gamma");
+
+        int secondLineStart = control.Text.IndexOf('\n') + 1;
+        Assert.Equal(secondLineStart, control.GetFirstCharIndexFromLine(1));
+
+        Size clientSize = control.ClientSize;
+
+        // Two consecutive non-zero sizes: nothing should change.
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(clientSize.Width, clientSize.Height));
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(clientSize.Width - 1, clientSize.Height));
+
+        Assert.Equal(secondLineStart, control.GetFirstCharIndexFromLine(1));
+    }
+
+    [WinFormsTheory]
+    [InlineData(1, 2)]
+    [InlineData(400, 401)]
+    [InlineData(65534, 65535)]
+    [InlineData(65535, 65534)]
+    public void RichTextBox_WmSize_ZeroToNonZero_RefreshesWithNonZeroWidths(int width, int refreshWidth)
+    {
+        using SizeTrackingRichTextBox control = new();
+        control.CreateControl();
+
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(0, 0));
+        control.TrackSizes = true;
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(width, 300));
+
+        Assert.Equal<Size>(
+            [new(width, 300), new(refreshWidth, 300), new(width, 300)],
+            control.ReceivedSizes);
+    }
+
+    /// <summary>
+    ///  Records resize messages while bounding recursive refreshes in regression tests.
+    /// </summary>
+    private class SizeTrackingRichTextBox : RichTextBox
+    {
+        [DefaultValue(false)]
+        public bool TrackSizes { get; set; }
+
+        public List<Size> ReceivedSizes { get; } = [];
+
+        protected override void WndProc(ref Message m)
+        {
+            if (TrackSizes && m.Msg == (int)PInvokeCore.WM_SIZE)
+            {
+                ReceivedSizes.Add(new Size(m.LParamInternal.LOWORD, m.LParamInternal.HIWORD));
+                if (ReceivedSizes.Count > 3)
+                {
+                    // Fail on the recorded messages instead of exhausting the stack before the assertion.
+                    return;
+                }
+            }
+
+            base.WndProc(ref m);
+        }
+    }
+
+    [WinFormsFact]
+    public void RichTextBox_MinimizedFormTextRemoval_LinePositionsRemainConsistentAfterRestore()
+    {
+        using Form form = new() { ClientSize = new Size(400, 300) };
+        using RichTextBox control = new()
+        {
+            Dock = DockStyle.Fill,
+            WordWrap = false
+        };
+        form.Controls.Add(control);
+        form.Show();
+
+        for (int i = 0; i < 5; i++)
+        {
+            control.AppendText($"line {i}: some sample text of varying length {new string('x', i * 3)}\n");
+        }
+
+        form.WindowState = FormWindowState.Minimized;
+
+        // Remove the first line while the form is minimized and its docked child would
+        // previously have been collapsed to a 0x0 client size and back.
+        int firstLineLength = control.Text.IndexOf('\n') + 1;
+        string expectedText = control.Text[firstLineLength..];
+        control.Select(0, firstLineLength);
+        control.SelectedRtf = "{\\rtf1\\ansi}";
+        form.WindowState = FormWindowState.Normal;
+
+        string text = control.Text;
+        Assert.Equal(expectedText, text);
+        Assert.Equal(0, control.GetFirstCharIndexFromLine(0));
+        int line = 1;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\n')
+            {
+                Assert.Equal(i + 1, control.GetFirstCharIndexFromLine(line));
+                line++;
+            }
+        }
+
+        Assert.Equal(-1, control.GetFirstCharIndexFromLine(line));
     }
 
     private class CantCreateHandleRichTextBox : RichTextBox
