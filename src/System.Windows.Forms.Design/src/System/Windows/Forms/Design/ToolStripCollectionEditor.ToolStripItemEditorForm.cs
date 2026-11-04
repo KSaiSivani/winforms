@@ -122,6 +122,9 @@ internal partial class ToolStripCollectionEditor
             {
                 if (value != _targetToolStripCollection)
                 {
+                    _componentChangeSvc?.ComponentChanged -= OnComponentChanged;
+                    _componentChangeSvc = null;
+
                     // Clear our existing list of items.
                     _itemList?.Clear();
 
@@ -153,6 +156,7 @@ internal partial class ToolStripCollectionEditor
 
                             if (Context.GetService<IComponentChangeService>() is IComponentChangeService changeService)
                             {
+                                _componentChangeSvc = changeService;
                                 changeService.ComponentChanged += OnComponentChanged;
                             }
 
@@ -161,8 +165,6 @@ internal partial class ToolStripCollectionEditor
                     }
                     else
                     {
-                        _componentChangeSvc?.ComponentChanged -= OnComponentChanged;
-                        _componentChangeSvc = null;
                         _selectedItemProps.Site = null;
                     }
 

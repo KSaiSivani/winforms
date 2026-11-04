@@ -5,7 +5,11 @@
 
 using System.ComponentModel;
 using System.Drawing.Imaging;
+using System.Reflection;
+using System.Windows.Forms.Design;
+using System.Windows.Forms.Design.Tests;
 using System.Windows.Forms.TestUtilities;
+using Moq;
 
 namespace System.Drawing.Design.Tests;
 
@@ -132,7 +136,7 @@ public class ImageEditorTests
         using Bitmap image = new(10, 10);
         image.Save(stream, ImageFormat.Bmp);
         stream.Position = 0;
-        Bitmap result = Assert.IsType<Bitmap>(editor.LoadFromStream(stream));
+        using Bitmap result = Assert.IsType<Bitmap>(editor.LoadFromStream(stream));
         Assert.Equal(new Size(10, 10), result.Size);
 
         using MemoryStream resultStream = new();
@@ -171,6 +175,8 @@ public class ImageEditorTests
 
         PaintValueEventArgs e = new(null, otherImage, graphics, new Rectangle(1, 2, 3, 4));
         editor.PaintValue(e);
+        Assert.Equal(Color.Red.ToArgb(), image.GetPixel(2, 3).ToArgb());
+        Assert.Equal(0, image.GetPixel(0, 0).ToArgb());
     }
 
     public static IEnumerable<object[]> PaintValue_InvalidArgsValue_TestData()
@@ -188,6 +194,7 @@ public class ImageEditorTests
         using Graphics graphics = Graphics.FromImage(image);
         PaintValueEventArgs e = new(null, value, graphics, new Rectangle(1, 2, 3, 4));
         editor.PaintValue(e);
+        Assert.Equal(0, image.GetPixel(2, 3).ToArgb());
     }
 
     [Fact]
@@ -195,6 +202,124 @@ public class ImageEditorTests
     {
         ImageEditor editor = new();
         editor.PaintValue(null);
+    }
+
+    [WinFormsTheory]
+    [InlineData(null)]
+    [InlineData("not-an-image")]
+    public void ImageEditor_EditValue_Cancel_InitializesAndReusesFileDialog(object value)
+    {
+        ImageEditor editor = new();
+        Mock<IWindowsFormsEditorService> mockEditorService = new(MockBehavior.Strict);
+        Mock<IServiceProvider> mockServiceProvider = new(MockBehavior.Strict);
+        mockServiceProvider
+            .Setup(p => p.GetService(typeof(IWindowsFormsEditorService)))
+            .Returns(mockEditorService.Object);
+
+        using EditorDialogTestHost owner = new(() => GetFileDialog(editor));
+        Assert.Same(value, editor.EditValue(null, mockServiceProvider.Object, value));
+        FileDialog dialog = GetFileDialog(editor);
+        Assert.NotNull(dialog);
+        Assert.Equal(
+            "All image files(*.bmp,*.gif,*.jpg,*.jpeg,*.png,*.ico,*.emf,*.wmf)|*.bmp;*.gif;*.jpg;*.jpeg;*.png;*.ico;*.emf;*.wmf"
+            + "|Bitmap files(*.bmp,*.gif,*.jpg,*.jpeg,*.png,*.ico)|*.bmp;*.gif;*.jpg;*.jpeg;*.png;*.ico"
+            + "|Metafiles(*.emf,*.wmf)|*.emf;*.wmf",
+            dialog.Filter);
+        Assert.Same(value, editor.EditValue(null, mockServiceProvider.Object, value));
+        Assert.Same(dialog, GetFileDialog(editor));
+        Assert.Equal(2, owner.DialogCount);
+    }
+
+    [Fact]
+    public void ImageEditor_HasFileDialogField()
+    {
+        FieldInfo field = typeof(ImageEditor).GetField("_fileDialog",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Assert.NotNull(field);
+        Assert.Equal(typeof(FileDialog), field.FieldType);
+    }
+
+    [Fact]
+    public void ImageEditor_FileDialogField_InitialValue_IsNull()
+    {
+        // Verifies that a freshly constructed ImageEditor has _fileDialog == null,
+        // which is required for the lazy initialization in EditValue.
+        ImageEditor editor = new();
+        FieldInfo field = typeof(ImageEditor).GetField("_fileDialog",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        object value = field.GetValue(editor);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void ImageEditor_FileDialogField_AfterInvalidProviderEditValue_RemainsNull()
+    {
+        // Confirms that the invalid-provider early-return path in EditValue
+        // does NOT initialize the _fileDialog field.
+        ImageEditor editor = new();
+        _ = editor.EditValue(null, null, "test");
+
+        FieldInfo field = typeof(ImageEditor).GetField("_fileDialog",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        object value = field.GetValue(editor);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void ImageEditor_GetExtensions_InvokeWithEmptyExtenders_ReturnsEmpty()
+    {
+        // Verifies that when GetImageExtenders returns an empty array, GetExtensions
+        // returns an empty string array (no extenders to iterate).
+        EmptyExtendersImageEditor editor = new();
+        Assert.Empty(editor.GetExtensions());
+    }
+
+    [Fact]
+    public void ImageEditor_GetExtensions_InvokeWithNullEntryInExtenders_SkipsNull()
+    {
+        // Verifies that GetExtensions skips a null entry in the extenders list
+        // (the `extender is null` check inside the loop).
+        NullEntryExtendersImageEditor editor = new();
+        string[] extensions = editor.GetExtensions();
+        Assert.Equal(new string[] { "PublicImageEditor" }, extensions);
+    }
+
+    [Fact]
+    public void ImageEditor_GetExtensions_InvokeWithNonImageEditorExtender_SkipsIt()
+    {
+        // Verifies that GetExtensions skips an entry that is not assignable to
+        // ImageEditor (the `!typeof(ImageEditor).IsAssignableFrom(extender)` check).
+        NonImageEditorExtendersImageEditor editor = new();
+        Assert.Empty(editor.GetExtensions());
+    }
+
+    [Fact]
+    public void ImageEditor_GetExtensions_InvokeWithExtenderReturningNullExtensions_SkipsIt()
+    {
+        // Verifies that GetExtensions skips an extender whose GetExtensions()
+        // returns null (the `if (extensions is not null)` check).
+        NullExtensionsExtendersImageEditor editor = new();
+        Assert.Empty(editor.GetExtensions());
+    }
+
+    [Fact]
+    public void ImageEditor_LoadFromStream_PngStream_ReturnsExpected()
+    {
+        // Verify LoadFromStream works with a PNG stream (valid image path, not just BMP).
+        SubImageEditor editor = new();
+        using MemoryStream stream = new();
+        using Bitmap image = new(16, 16);
+        image.Save(stream, ImageFormat.Png);
+        stream.Position = 0;
+        using Bitmap result = Assert.IsType<Bitmap>(editor.LoadFromStream(stream));
+        Assert.Equal(new Size(16, 16), result.Size);
+    }
+
+    private static FileDialog GetFileDialog(ImageEditor editor)
+    {
+        FieldInfo field = typeof(ImageEditor).GetField("_fileDialog",
+            BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (FileDialog)field.GetValue(editor)!;
     }
 
     private class SubImageEditor : ImageEditor
@@ -260,5 +385,33 @@ public class ImageEditorTests
         }
 
         protected override string[] GetExtensions() => null;
+    }
+
+    private class EmptyExtendersImageEditor : ImageEditor
+    {
+        public new string[] GetExtensions() => base.GetExtensions();
+
+        protected override Type[] GetImageExtenders() => [];
+    }
+
+    private class NullEntryExtendersImageEditor : ImageEditor
+    {
+        public new string[] GetExtensions() => base.GetExtensions();
+
+        protected override Type[] GetImageExtenders() => [null, typeof(PublicImageEditor)];
+    }
+
+    private class NonImageEditorExtendersImageEditor : ImageEditor
+    {
+        public new string[] GetExtensions() => base.GetExtensions();
+
+        protected override Type[] GetImageExtenders() => [typeof(object)];
+    }
+
+    private class NullExtensionsExtendersImageEditor : ImageEditor
+    {
+        public new string[] GetExtensions() => base.GetExtensions();
+
+        protected override Type[] GetImageExtenders() => [typeof(NullExtensionsImageEditor)];
     }
 }
