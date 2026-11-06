@@ -20,8 +20,7 @@ internal class ListViewGroupConverter : TypeConverter
     /// </summary>
     public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
     {
-        if (sourceType == typeof(string)
-            && (context?.Instance is ListViewItem || GetListView(context) is not null))
+        if (sourceType == typeof(string) && GetListView(context) is not null)
         {
             return true;
         }
