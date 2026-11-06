@@ -20,7 +20,8 @@ internal class ListViewGroupConverter : TypeConverter
     /// </summary>
     public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
     {
-        if (sourceType == typeof(string) && context is not null && context.Instance is ListViewItem)
+        if (sourceType == typeof(string)
+            && (context?.Instance is ListViewItem || GetListView(context) is not null))
         {
             return true;
         }
@@ -55,16 +56,13 @@ internal class ListViewGroupConverter : TypeConverter
         if (value is string stringValue)
         {
             string text = stringValue.Trim();
-            if (context is not null && context.Instance is not null)
+            if (GetListView(context) is ListView listView)
             {
-                if (context.Instance is ListViewItem item && item.ListView is not null)
+                foreach (ListViewGroup group in listView.Groups)
                 {
-                    foreach (ListViewGroup group in item.ListView.Groups)
+                    if (group.Header == text)
                     {
-                        if (group.Header == text)
-                        {
-                            return group;
-                        }
+                        return group;
                     }
                 }
             }

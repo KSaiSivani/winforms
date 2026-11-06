@@ -42,6 +42,10 @@ public class ListViewGroupConverterTests
         ListViewItem item2 = new();
         listViewWithGroups.Items.Add(item2);
         yield return new object[] { item2, true };
+
+        ListViewItem item3 = new();
+        listViewWithGroups.Items.Add(item3);
+        yield return new object[] { new object[] { item2, item3 }, true };
     }
 
     [Theory]
@@ -66,21 +70,25 @@ public class ListViewGroupConverterTests
     }
 
     [Theory]
-    [InlineData("header")]
-    [InlineData("  header  ")]
-    public void ListViewGroupConverter_ConvertFrom_ValidContext_ReturnsExpected(string value)
+    [InlineData("header", false)]
+    [InlineData("  header  ", false)]
+    [InlineData("header", true)]
+    [InlineData("  header  ", true)]
+    public void ListViewGroupConverter_ConvertFrom_ValidContext_ReturnsExpected(string value, bool multipleItems)
     {
         ListView listView = new();
         ListViewGroup group = new("name", "header");
         listView.Groups.Add(group);
         ListViewItem item = new();
         listView.Items.Add(item);
+        ListViewItem otherItem = new();
+        listView.Items.Add(otherItem);
 
         TypeConverter converter = TypeDescriptor.GetConverter(typeof(ListViewGroup));
         Mock<ITypeDescriptorContext> mockContext = new(MockBehavior.Strict);
         mockContext
             .Setup(c => c.Instance)
-            .Returns(item);
+            .Returns(multipleItems ? new object[] { item, otherItem } : item);
         Assert.Same(group, converter.ConvertFrom(mockContext.Object, null, value));
     }
 
@@ -275,12 +283,7 @@ public class ListViewGroupConverterTests
         ListViewItem item3 = new();
         listViewWithGroups.Items.Add(item3);
         yield return new object[] { new object[] { item2, item3 }, new object[] { group, null } };
-
-        ListView otherListView = new();
-        ListViewItem otherItem = new();
-        otherListView.Items.Add(otherItem);
-        yield return new object[] { new object[] { item2, otherItem }, null };
-
+        yield return new object[] { new object[] { item2, item1 }, null };
         yield return new object[] { Array.Empty<object>(), null };
         yield return new object[] { new object[] { item2, new ListViewItem() }, null };
         yield return new object[] { new object[] { item2, new object() }, null };
