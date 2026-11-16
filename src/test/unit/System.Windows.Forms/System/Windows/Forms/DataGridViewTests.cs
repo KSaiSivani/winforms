@@ -2943,6 +2943,42 @@ public partial class DataGridViewTests : IDisposable
         Assert.Equal(rowsCount2 + 1, control.Rows.Count); // + 1 is the new DGV row
     }
 
+    [WinFormsTheory]
+    [InlineData(nameof(EditTestItem.Output), "42")]
+    [InlineData(nameof(EditTestItem.Input), "1")]
+    public void DataGridView_ItemChanged_InEditedRow_RefreshesEditingControlOnlyForEditedProperty(string changedProperty, string expectedText)
+    {
+        using DataGridView control = new() { BindingContext = [] };
+        control.CreateControl();
+        BindingList<EditTestItem> items = [new()];
+        control.DataSource = items;
+
+        control.CurrentCell = control[control.Columns[nameof(EditTestItem.Input)].Index, 0];
+        control.BeginEdit(selectAll: false).Should().BeTrue();
+        control.EditingControl.Text = "42";
+
+        items[0].RaisePropertyChanged(changedProperty);
+
+        string editingText = control.EditingControl.Text;
+        bool isDirty = control.IsCurrentCellDirty;
+        control.CancelEdit();
+        control.EndEdit();
+
+        editingText.Should().Be(expectedText);
+        isDirty.Should().Be(expectedText == "42");
+    }
+
+    private class EditTestItem : INotifyPropertyChanged
+    {
+        public int Input { get; set; } = 1;
+
+        public int Output { get; set; } = 2;
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        public void RaisePropertyChanged(string propertyName) => PropertyChanged?.Invoke(this, new(propertyName));
+    }
+
     private BindingSource GetTestBindingSource(int rowsCount)
     {
         DataTable dt = new();

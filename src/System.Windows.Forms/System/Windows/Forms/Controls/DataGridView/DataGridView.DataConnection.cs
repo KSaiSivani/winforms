@@ -648,8 +648,14 @@ public partial class DataGridView
 
                         // Repaint the row header cell to show potential error icon
                         _owner.InvalidateCell(-1, e.NewIndex);
-                        // update the editing control value if the data changed in the row the user was editing
-                        if (_owner.CurrentCellAddress.Y == e.NewIndex && _owner.IsCurrentCellInEditMode)
+                        // update the editing control value if the data changed in the cell the user was editing
+                        if (_owner.CurrentCellAddress.Y == e.NewIndex
+                            && _owner.IsCurrentCellInEditMode
+                            && (string.IsNullOrEmpty(dataPropertyName)
+                                || string.Equals(
+                                    _owner.Columns[_owner.CurrentCellAddress.X].DataPropertyName,
+                                    dataPropertyName,
+                                    StringComparison.OrdinalIgnoreCase)))
                         {
                             _owner.RefreshEdit();
                         }
