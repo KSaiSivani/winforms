@@ -46,6 +46,11 @@ public class ListViewGroupConverterTests
         ListViewItem item3 = new();
         listViewWithGroups.Items.Add(item3);
         yield return new object[] { new object[] { item2, item3 }, true };
+        yield return new object[] { Array.Empty<object>(), false };
+        yield return new object[] { new object[] { item2, item1 }, false };
+        yield return new object[] { new object[] { item2, new ListViewItem() }, false };
+        yield return new object[] { new object[] { item2, new object() }, false };
+        yield return new object[] { new object[] { item2, null }, false };
     }
 
     [Theory]
@@ -90,6 +95,64 @@ public class ListViewGroupConverterTests
             .Setup(c => c.Instance)
             .Returns(multipleItems ? new object[] { item, otherItem } : item);
         Assert.Same(group, converter.ConvertFrom(mockContext.Object, null, value));
+    }
+
+    [WinFormsTheory]
+    [InlineData(null)]
+    [InlineData("(none)")]
+    public void ListViewGroupConverter_ConvertFrom_MultipleItemsEmptyValue_ReturnsNull(string value)
+    {
+        using ListView listView = new();
+        ListViewGroup group = new("header");
+        listView.Groups.Add(group);
+        ListViewItem item1 = new() { Group = group };
+        ListViewItem item2 = new() { Group = group };
+        listView.Items.AddRange([item1, item2]);
+
+        TypeConverter converter = TypeDescriptor.GetConverter(typeof(ListViewGroup));
+        Mock<ITypeDescriptorContext> context = new(MockBehavior.Strict);
+        context.Setup(c => c.Instance).Returns(new object[] { item1, item2 });
+
+        Assert.Null(converter.ConvertFrom(context.Object, null, value));
+    }
+
+    [WinFormsTheory]
+    [InlineData("unknown")]
+    [InlineData("HEADER")]
+    public void ListViewGroupConverter_ConvertFrom_MultipleItemsUnknownHeader_ThrowsNotSupportedException(string value)
+    {
+        using ListView listView = new();
+        listView.Groups.Add(new ListViewGroup("header"));
+        ListViewItem item1 = new();
+        ListViewItem item2 = new();
+        listView.Items.AddRange([item1, item2]);
+
+        TypeConverter converter = TypeDescriptor.GetConverter(typeof(ListViewGroup));
+        Mock<ITypeDescriptorContext> context = new(MockBehavior.Strict);
+        context.Setup(c => c.Instance).Returns(new object[] { item1, item2 });
+
+        Assert.Throws<NotSupportedException>(() => converter.ConvertFrom(context.Object, null, value));
+    }
+
+    [WinFormsTheory]
+    [InlineData("First header", 0)]
+    [InlineData("Second header", 1)]
+    [InlineData("  Second header  ", 1)]
+    public void ListViewGroupConverter_ConvertFrom_MultipleItemsMultipleGroups_ReturnsExpected(string value, int groupIndex)
+    {
+        using ListView listView = new();
+        ListViewGroup group1 = new("firstName", "First header");
+        ListViewGroup group2 = new("secondName", "Second header");
+        listView.Groups.AddRange([group1, group2]);
+        ListViewItem item1 = new() { Group = group1 };
+        ListViewItem item2 = new() { Group = group2 };
+        listView.Items.AddRange([item1, item2]);
+
+        TypeConverter converter = TypeDescriptor.GetConverter(typeof(ListViewGroup));
+        Mock<ITypeDescriptorContext> context = new(MockBehavior.Strict);
+        context.Setup(c => c.Instance).Returns(new object[] { item1, item2 });
+
+        Assert.Same(listView.Groups[groupIndex], converter.ConvertFrom(context.Object, null, value));
     }
 
     public static IEnumerable<object[]> ConvertFrom_InvalidContext_TestData()
@@ -299,6 +362,34 @@ public class ListViewGroupConverterTests
             .Setup(c => c.Instance)
             .Returns(instance);
         Assert.Equal(expected, converter.GetStandardValues(mockContext.Object)?.Cast<object>());
+    }
+
+    [WinFormsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ListViewGroupConverter_GetStandardValues_MultipleItems_ReturnsGroupsAndNone(bool hasGroups)
+    {
+        using ListView listView = new();
+        ListViewGroup group1 = new("First header");
+        ListViewGroup group2 = new("Second header");
+        if (hasGroups)
+        {
+            listView.Groups.AddRange([group1, group2]);
+        }
+
+        ListViewItem item1 = new();
+        ListViewItem item2 = new();
+        listView.Items.AddRange([item1, item2]);
+
+        TypeConverter converter = TypeDescriptor.GetConverter(typeof(ListViewGroup));
+        Mock<ITypeDescriptorContext> context = new(MockBehavior.Strict);
+        context.Setup(c => c.Instance).Returns(new object[] { item1, item2 });
+
+        TypeConverter.StandardValuesCollection values = converter.GetStandardValues(context.Object);
+        Assert.NotNull(values);
+        object[] expected = hasGroups ? [group1, group2, null] : [null];
+        Assert.Equal(expected, values.Cast<object>());
+        Assert.Equal("(none)", converter.ConvertTo(context.Object, null, values[values.Count - 1], typeof(string)));
     }
 
     [Fact]
