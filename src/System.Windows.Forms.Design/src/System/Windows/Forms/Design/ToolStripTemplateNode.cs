@@ -1830,6 +1830,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
 
         protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
         {
+            UpdateColors();
             if (_owner._component is MenuStrip or ToolStripDropDownItem)
             {
                 Graphics g = e.Graphics;
@@ -1846,6 +1847,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         /// </summary>
         protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
         {
+            UpdateColors();
             Graphics g = e.Graphics;
             Rectangle bounds = new(Point.Empty, e.ToolStrip.Size);
             Pen selectborderPen = new(_toolStripBorderColor);
@@ -1859,6 +1861,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         /// </summary>
         protected override void OnRenderLabelBackground(ToolStripItemRenderEventArgs e)
         {
+            UpdateColors();
             base.OnRenderLabelBackground(e);
             ToolStripItem item = e.Item;
             Graphics g = e.Graphics;
@@ -1946,6 +1949,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
         /// </summary>
         protected override void OnRenderSplitButtonBackground(ToolStripItemRenderEventArgs e)
         {
+            UpdateColors();
             // DON'T CALL THE BASE AS IT DOESNT ALLOW US TO RENDER THE DROPDOWN BUTTON ....
             // base.OnRenderSplitButtonBackground(e);
             Graphics g = e.Graphics;
@@ -2020,6 +2024,7 @@ internal class ToolStripTemplateNode : IMenuStatusHandler
 
         protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
         {
+            UpdateColors();
             ToolStripItem item = e.Item as ToolStripLabel;
             if (item is not null && string.Equals(item.Name, CenterLabelName, StringComparison.InvariantCulture))
             {
