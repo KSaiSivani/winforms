@@ -1,10 +1,11 @@
-// Licensed to the .NET Foundation under one or more agreements.
+﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
 #nullable disable
 
 using System.ComponentModel.Design;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.CompilerServices;
 using System.Windows.Forms.Design.Behavior;
 using System.Windows.Forms.Design.Tests.Mocks;
@@ -80,7 +81,7 @@ public class ToolStripDesignerTests
 
     [WinFormsTheory]
     [InlineData(SystemColorMode.Classic, 255, 171)]
-    [InlineData(SystemColorMode.Dark, 32, 240)]
+    [InlineData(SystemColorMode.Dark, 32, 140)]
     public void MiniToolStripRenderer_RenderLabelBackground_RendersExpectedColors(
         SystemColorMode colorMode,
         int expectedBackgroundComponent,
@@ -197,9 +198,26 @@ public class ToolStripDesignerTests
             renderer.DrawLabelBackground(eventArgs);
 
             bitmap.GetPixel(5, 5).Should().Be(darkMode ? Color.FromArgb(32, 32, 32) : Color.FromArgb(255, 255, 255));
-            item.ForeColor.Should().Be(darkMode ? Color.FromArgb(240, 240, 240) : Color.FromArgb(171, 171, 171));
+            // ForeColor stores the renderer's default border color without dark-mode conversion.
+            item.ForeColor.Should().Be(darkMode ? Color.FromArgb(140, 140, 140) : Color.FromArgb(171, 171, 171));
 
-            if (state is (int)TemplateNodeSelectionState.MouseOverHotRegion or (int)TemplateNodeSelectionState.HotRegionSelected)
+            Rectangle hotRegion = owner.HotRegion;
+            if (state is (int)TemplateNodeSelectionState.TemplateNodeSelected or (int)TemplateNodeSelectionState.MouseOverLabel)
+            {
+                Color gradientStart = darkMode ? Color.FromArgb(32, 32, 32) : Color.White;
+                Color gradientEnd = darkMode ? Color.FromArgb(140, 140, 140) : Color.FromArgb(171, 171, 171);
+                using Bitmap expectedBitmap = new(bitmap.Width, bitmap.Height);
+                using Graphics expectedGraphics = Graphics.FromImage(expectedBitmap);
+                using LinearGradientBrush brush = new(hotRegion, gradientStart, gradientEnd, LinearGradientMode.Vertical);
+                expectedGraphics.FillRectangle(brush, hotRegion);
+
+                // Sample away from the arrow and at both ends to distinguish a gradient from a solid fill.
+                Point top = new(hotRegion.Left + 1, hotRegion.Top + 1);
+                Point bottom = new(hotRegion.Left + 1, hotRegion.Bottom - 2);
+                bitmap.GetPixel(top.X, top.Y).Should().Be(expectedBitmap.GetPixel(top.X, top.Y));
+                bitmap.GetPixel(bottom.X, bottom.Y).Should().Be(expectedBitmap.GetPixel(bottom.X, bottom.Y));
+            }
+            else if (state is (int)TemplateNodeSelectionState.MouseOverHotRegion or (int)TemplateNodeSelectionState.HotRegionSelected)
             {
                 Color expectedColor = (darkMode, state) switch
                 {
@@ -208,7 +226,6 @@ public class ToolStripDesignerTests
                     (false, (int)TemplateNodeSelectionState.MouseOverHotRegion) => Color.FromArgb(193, 210, 238),
                     (false, _) => Color.FromArgb(152, 181, 226)
                 };
-                Rectangle hotRegion = owner.HotRegion;
                 bitmap.GetPixel(hotRegion.Left + 1, hotRegion.Top + 1).Should().Be(expectedColor);
             }
         }
@@ -342,7 +359,7 @@ public class ToolStripDesignerTests
             applicationAccessor.s_colorMode = darkMode ? SystemColorMode.Dark : SystemColorMode.Classic;
             renderer.DrawItemText(eventArgs);
 
-            eventArgs.TextColor.Should().Be(darkMode ? Color.FromArgb(240, 240, 240) : Color.Magenta);
+            eventArgs.TextColor.Should().Be(darkMode ? Color.FromArgb(140, 140, 140) : Color.Magenta);
         }
         finally
         {
