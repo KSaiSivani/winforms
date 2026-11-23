@@ -128,18 +128,25 @@ public partial class RichTextBox : TextBoxBase
             return;
         }
 
+        HWND handle = HWND;
+        Size clientSize = ClientSize;
         // WM_SIZE packs each dimension into 16 bits; keep the temporary width non-zero.
         int refreshWidth = width == ushort.MaxValue ? width - 1 : width + 1;
 
         // wParam 0 == SIZE_RESTORED, matching what a genuine, non-minimized resize sends.
         PInvokeCore.SendMessage(
-            this,
+            handle,
             PInvokeCore.WM_SIZE,
             (WPARAM)0u,
             PARAM.FromLowHigh(refreshWidth, height));
 
+        if (!IsHandleCreated || HWND != handle || ClientSize != clientSize)
+        {
+            return;
+        }
+
         PInvokeCore.SendMessage(
-            this,
+            handle,
             PInvokeCore.WM_SIZE,
             (WPARAM)0u,
             PARAM.FromLowHigh(width, height));
@@ -3482,8 +3489,8 @@ public partial class RichTextBox : TextBoxBase
                         // Beep and disallow change for all other messages
                         default:
                             PInvoke.MessageBeep(MESSAGEBOX_STYLE.MB_OK);
-                                // Rebuild the line cache when the control is restored from a minimized or zero-sized
-                                // state so line indexing stays aligned with the current text.
+                            // Rebuild the line cache when the control is restored from a minimized or zero-sized
+                            // state so line indexing stays aligned with the current text.
                             break;
                     }
 
@@ -3656,6 +3663,10 @@ public partial class RichTextBox : TextBoxBase
                 else if (ShouldSerializeCursor() || !Cursor.Equals(Cursors.IBeam))
                 {
                     base.WndProc(ref m);
+                }
+                else if (GetStyle(ControlStyles.EnableNotifyMessage))
+                {
+                    OnNotifyMessage(m);
                 }
 
                 break;

@@ -10990,29 +10990,145 @@ public partial class RichTextBoxTests
             control.ReceivedSizes);
     }
 
+    [WinFormsFact]
+    public void RichTextBox_WmSize_NonZeroToNonZero_DoesNotRefreshLineCache()
+    {
+        using SizeTrackingRichTextBox control = new();
+        control.CreateControl();
+        control.TrackSizes = true;
+
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(400, 300));
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(401, 300));
+
+        Assert.Equal<Size>([new(400, 300), new(401, 300)], control.ReceivedSizes);
+    }
+
+    [WinFormsFact]
+    public void RichTextBox_WmSize_DisposedDuringRefresh_DoesNotRecreateHandle()
+    {
+        using SizeTrackingRichTextBox control = new(c => c.Dispose());
+        control.CreateControl();
+        int handleCreatedCount = 0;
+        control.HandleCreated += (sender, e) => handleCreatedCount++;
+
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(0, 0));
+        control.TrackSizes = true;
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(400, 300));
+
+        Assert.True(control.IsDisposed);
+        Assert.False(control.IsHandleCreated);
+        Assert.Equal(0, handleCreatedCount);
+        Assert.Equal(2, control.ReceivedSizes.Count);
+    }
+
+    [WinFormsFact]
+    public void RichTextBox_WmSize_HandleRecreatedDuringRefresh_DoesNotSendStaleSize()
+    {
+        int messageCountAfterRecreation = 0;
+        using SizeTrackingRichTextBox control = new(c =>
+        {
+            c.RecreateHandle();
+            messageCountAfterRecreation = c.ReceivedSizes.Count;
+        });
+        control.CreateControl();
+        int handleCreatedCount = 0;
+        control.HandleCreated += (sender, e) => handleCreatedCount++;
+
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(0, 0));
+        control.TrackSizes = true;
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(400, 300));
+
+        Assert.True(control.IsHandleCreated);
+        Assert.Equal(1, handleCreatedCount);
+        Assert.Equal(messageCountAfterRecreation, control.ReceivedSizes.Count);
+    }
+
+    [WinFormsFact]
+    public void RichTextBox_WmSize_ClientSizeChangedDuringRefresh_DoesNotSendStaleSize()
+    {
+        int messageCountAfterResize = 0;
+        Size newClientSize = new(200, 150);
+        using SizeTrackingRichTextBox control = new(c =>
+        {
+            c.ClientSize = newClientSize;
+            messageCountAfterResize = c.ReceivedSizes.Count;
+        });
+        control.CreateControl();
+
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(0, 0));
+        control.TrackSizes = true;
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(400, 300));
+
+        Assert.Equal(newClientSize, control.ClientSize);
+        Assert.Equal(messageCountAfterResize, control.ReceivedSizes.Count);
+    }
+
+    [WinFormsFact]
+    public void RichTextBox_WmSetCursor_DefaultCursor_NotifiesMessage()
+    {
+        using SizeTrackingRichTextBox control = new();
+        control.CreateControl();
+        control.NotifiedMessages.Clear();
+
+        PInvokeCore.SendMessage(
+            control,
+            PInvokeCore.WM_SETCURSOR,
+            (WPARAM)control.Handle,
+            PARAM.FromLowHigh((int)PInvoke.HTCLIENT, (int)PInvokeCore.WM_MOUSEMOVE));
+
+        Assert.Same(Cursors.IBeam, control.Cursor);
+        Assert.Single(control.NotifiedMessages, message => message == (int)PInvokeCore.WM_SETCURSOR);
+    }
+
     /// <summary>
-    ///  Records resize messages while bounding recursive refreshes in regression tests.
+    ///  Records resize messages and invokes a callback to exercise reentrant changes.
     /// </summary>
     private class SizeTrackingRichTextBox : RichTextBox
     {
+        private Action<SizeTrackingRichTextBox> _onSize;
+
+        public SizeTrackingRichTextBox(Action<SizeTrackingRichTextBox> onSize = null)
+        {
+            _onSize = onSize;
+            SetStyle(ControlStyles.EnableNotifyMessage, true);
+        }
+
         [DefaultValue(false)]
         public bool TrackSizes { get; set; }
 
         public List<Size> ReceivedSizes { get; } = [];
 
+        public List<int> NotifiedMessages { get; } = [];
+
+        public new void RecreateHandle() => base.RecreateHandle();
+
+        protected override void OnNotifyMessage(Message m)
+        {
+            NotifiedMessages.Add(m.Msg);
+            base.OnNotifyMessage(m);
+        }
+
         protected override void WndProc(ref Message m)
         {
+            bool invokeCallback = false;
             if (TrackSizes && m.Msg == (int)PInvokeCore.WM_SIZE)
             {
                 ReceivedSizes.Add(new Size(m.LParamInternal.LOWORD, m.LParamInternal.HIWORD));
-                if (ReceivedSizes.Count > 3)
+                invokeCallback = ReceivedSizes.Count == 2;
+                if (ReceivedSizes.Count > 10)
                 {
-                    // Fail on the recorded messages instead of exhausting the stack before the assertion.
+                    // Bound recursive refreshes so the assertion fails instead of overflowing the stack.
                     return;
                 }
             }
 
             base.WndProc(ref m);
+            if (invokeCallback)
+            {
+                Action<SizeTrackingRichTextBox> callback = _onSize;
+                _onSize = null;
+                callback?.Invoke(this);
+            }
         }
     }
 
@@ -11023,6 +11139,7 @@ public partial class RichTextBoxTests
         using RichTextBox control = new()
         {
             Dock = DockStyle.Fill,
+            ReadOnly = true,
             WordWrap = false
         };
         form.Controls.Add(control);
@@ -11034,6 +11151,7 @@ public partial class RichTextBoxTests
         }
 
         form.WindowState = FormWindowState.Minimized;
+        Assert.Equal(Size.Empty, control.ClientSize);
 
         // Remove the first line while the form is minimized and its docked child would
         // previously have been collapsed to a 0x0 client size and back.
