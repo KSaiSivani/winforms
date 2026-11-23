@@ -49,6 +49,7 @@ public class ToolStripDesignerTests
         toolStrip.Items.Add("123");
         toolStrip.Items.Add("abc");
 
+        Assert.Equal(2, toolStripDesigner.AssociatedComponents.Count);
         Assert.Equal(2, toolStripDesigner.ActionLists.Count);
         Assert.False(toolStripDesigner.CacheItems);
         Assert.False(toolStripDesigner.DontCloseOverflow);
