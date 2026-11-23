@@ -11064,6 +11064,50 @@ public partial class RichTextBoxTests
     }
 
     [WinFormsFact]
+    public void RichTextBox_WmSize_ClientSizeChangedDuringOriginalMessage_DoesNotRefreshLineCache()
+    {
+        int messageCountAfterResize = 0;
+        Size newClientSize = new(200, 150);
+        using SizeTrackingRichTextBox control = new(onOriginalSize: c =>
+        {
+            c.ClientSize = newClientSize;
+            messageCountAfterResize = c.ReceivedSizes.Count;
+        });
+        control.CreateControl();
+
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(0, 0));
+        control.TrackSizes = true;
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(400, 300));
+
+        Assert.Equal(newClientSize, control.ClientSize);
+        Assert.True(messageCountAfterResize > 0);
+        Assert.Equal(messageCountAfterResize, control.ReceivedSizes.Count);
+    }
+
+    [WinFormsFact]
+    public void RichTextBox_WmSize_HandleRecreatedDuringOriginalMessage_DoesNotRefreshLineCache()
+    {
+        int messageCountAfterRecreation = 0;
+        using SizeTrackingRichTextBox control = new(onOriginalSize: c =>
+        {
+            c.RecreateHandle();
+            messageCountAfterRecreation = c.ReceivedSizes.Count;
+        });
+        control.CreateControl();
+        int handleCreatedCount = 0;
+        control.HandleCreated += (sender, e) => handleCreatedCount++;
+
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(0, 0));
+        control.TrackSizes = true;
+        PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(400, 300));
+
+        Assert.True(control.IsHandleCreated);
+        Assert.Equal(1, handleCreatedCount);
+        Assert.True(messageCountAfterRecreation > 0);
+        Assert.Equal(messageCountAfterRecreation, control.ReceivedSizes.Count);
+    }
+
+    [WinFormsFact]
     public void RichTextBox_WmSetCursor_DefaultCursor_NotifiesMessage()
     {
         using SizeTrackingRichTextBox control = new();
@@ -11086,10 +11130,14 @@ public partial class RichTextBoxTests
     private class SizeTrackingRichTextBox : RichTextBox
     {
         private Action<SizeTrackingRichTextBox> _onSize;
+        private Action<SizeTrackingRichTextBox> _onOriginalSize;
 
-        public SizeTrackingRichTextBox(Action<SizeTrackingRichTextBox> onSize = null)
+        public SizeTrackingRichTextBox(
+            Action<SizeTrackingRichTextBox> onSize = null,
+            Action<SizeTrackingRichTextBox> onOriginalSize = null)
         {
             _onSize = onSize;
+            _onOriginalSize = onOriginalSize;
             SetStyle(ControlStyles.EnableNotifyMessage, true);
         }
 
@@ -11106,6 +11154,19 @@ public partial class RichTextBoxTests
         {
             NotifiedMessages.Add(m.Msg);
             base.OnNotifyMessage(m);
+        }
+
+        protected override void DefWndProc(ref Message m)
+        {
+            Action<SizeTrackingRichTextBox> callback = null;
+            if (TrackSizes && m.Msg == (int)PInvokeCore.WM_SIZE && ReceivedSizes.Count == 1)
+            {
+                callback = _onOriginalSize;
+                _onOriginalSize = null;
+            }
+
+            base.DefWndProc(ref m);
+            callback?.Invoke(this);
         }
 
         protected override void WndProc(ref Message m)
