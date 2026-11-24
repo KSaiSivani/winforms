@@ -3580,6 +3580,8 @@ public partial class RichTextBox : TextBoxBase
                     int height = m.LParamInternal.HIWORD;
                     bool wasSizedToZero = _wasSizedToZero;
                     _wasSizedToZero = width == 0 || height == 0;
+                    HWND handle = HWNDInternal;
+                    Size clientSize = ClientSize;
 
                     base.WndProc(ref m);
 
@@ -3587,7 +3589,8 @@ public partial class RichTextBox : TextBoxBase
                     // resized back to a real size (the form was restored). Text may have been
                     // removed while minimized, which leaves RichEdit's line cache stale —
                     // force it to recompute. See RefreshRichEditLineCache for details.
-                    if (wasSizedToZero && !_wasSizedToZero)
+                    if (wasSizedToZero && !_wasSizedToZero
+                        && IsHandleCreated && HWNDInternal == handle && ClientSize == clientSize)
                     {
                         RefreshRichEditLineCache(width, height);
                     }
@@ -3650,9 +3653,9 @@ public partial class RichTextBox : TextBoxBase
                 //      change the cursor to a hand. It does this through a synchronous notification
                 //      message. So we have to pass the message to the DefWndProc first, and
                 //      then, if we receive a notification message in the meantime (indicated by
-                //      changing "LinkCursor", we set it to a hand. Keep the native cursor for
-                //      the uncustomized default; replacing it with an I-beam over selected text
-                //      causes flicker. Explicit and non-default cursors still use Control's handler.
+                //      changing "LinkCursor", we set it to a hand. Otherwise, we call the
+                //      WM_SETCURSOR implementation on Control to set it to the user's selection for
+                //      the RichTextBox's cursor.
                 LinkCursor = false;
                 DefWndProc(ref m);
                 if (LinkCursor && !Cursor.Equals(Cursors.WaitCursor))
@@ -3660,13 +3663,9 @@ public partial class RichTextBox : TextBoxBase
                     Cursor.Current = Cursors.Hand;
                     m.ResultInternal = (LRESULT)1;
                 }
-                else if (ShouldSerializeCursor() || !Cursor.Equals(Cursors.IBeam))
+                else
                 {
                     base.WndProc(ref m);
-                }
-                else if (GetStyle(ControlStyles.EnableNotifyMessage))
-                {
-                    OnNotifyMessage(m);
                 }
 
                 break;
