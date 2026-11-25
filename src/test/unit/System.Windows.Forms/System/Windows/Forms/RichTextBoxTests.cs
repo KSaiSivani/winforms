@@ -11084,16 +11084,23 @@ public partial class RichTextBoxTests
         Assert.Equal(messageCountAfterResize, control.ReceivedSizes.Count);
     }
 
-    [WinFormsFact]
-    public void RichTextBox_WmSize_HandleRecreatedDuringOriginalMessage_DoesNotRefreshLineCache()
+    [WinFormsTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RichTextBox_WmSize_OriginalMessage_RefreshesOnlyForUnchangedHandle(bool recreateHandle)
     {
-        int messageCountAfterRecreation = 0;
+        int messageCountAfterCallback = 0;
         using SizeTrackingRichTextBox control = new(onOriginalSize: c =>
         {
-            c.RecreateHandle();
-            messageCountAfterRecreation = c.ReceivedSizes.Count;
+            if (recreateHandle)
+            {
+                c.RecreateHandle();
+            }
+
+            messageCountAfterCallback = c.ReceivedSizes.Count;
         });
         control.CreateControl();
+        Size clientSize = control.ClientSize;
         int handleCreatedCount = 0;
         control.HandleCreated += (sender, e) => handleCreatedCount++;
 
@@ -11102,9 +11109,19 @@ public partial class RichTextBoxTests
         PInvokeCore.SendMessage(control, PInvokeCore.WM_SIZE, (WPARAM)0, PARAM.FromLowHigh(400, 300));
 
         Assert.True(control.IsHandleCreated);
-        Assert.Equal(1, handleCreatedCount);
-        Assert.True(messageCountAfterRecreation > 0);
-        Assert.Equal(messageCountAfterRecreation, control.ReceivedSizes.Count);
+        Assert.Equal(clientSize, control.ClientSize);
+        Assert.Equal(recreateHandle ? 1 : 0, handleCreatedCount);
+        Assert.True(messageCountAfterCallback > 0);
+        Assert.Equal(
+            messageCountAfterCallback + (recreateHandle ? 0 : 2),
+            control.ReceivedSizes.Count);
+
+        if (!recreateHandle)
+        {
+            Assert.Equal<Size>(
+                [new(400, 300), new(401, 300), new(400, 300)],
+                control.ReceivedSizes);
+        }
     }
 
     [WinFormsFact]
@@ -11193,8 +11210,10 @@ public partial class RichTextBoxTests
         }
     }
 
-    [WinFormsFact]
-    public void RichTextBox_MinimizedFormTextRemoval_LinePositionsRemainConsistentAfterRestore()
+    [WinFormsTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void RichTextBox_MinimizedFormTextRemoval_LinePositionsRemainConsistentAfterRestore(bool removeWholeLine)
     {
         using Form form = new() { ClientSize = new Size(400, 300) };
         using RichTextBox control = new()
@@ -11214,13 +11233,15 @@ public partial class RichTextBoxTests
         form.WindowState = FormWindowState.Minimized;
         Assert.Equal(Size.Empty, control.ClientSize);
 
-        // Remove the first line while the form is minimized and its docked child would
-        // previously have been collapsed to a 0x0 client size and back.
-        int firstLineLength = control.Text.IndexOf('\n') + 1;
-        string expectedText = control.Text[firstLineLength..];
-        control.Select(0, firstLineLength);
+        int removalStart = removeWholeLine ? 0 : 5;
+        int removalLength = removeWholeLine ? control.Text.IndexOf('\n') + 1 : 3;
+        string expectedText = control.Text.Remove(removalStart, removalLength);
+        control.Select(removalStart, removalLength);
         control.SelectedRtf = "{\\rtf1\\ansi}";
+        Assert.Equal(expectedText, control.Text);
         form.WindowState = FormWindowState.Normal;
+        Assert.True(control.ClientSize.Width > 0);
+        Assert.True(control.ClientSize.Height > 0);
 
         string text = control.Text;
         Assert.Equal(expectedText, text);
