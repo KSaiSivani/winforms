@@ -3,6 +3,7 @@
 
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Windows.Forms.ButtonInternal;
 using System.Windows.Forms.Rendering.Animation;
 using System.Windows.Forms.Rendering.Button;
 
@@ -18,6 +19,7 @@ internal sealed class AnimatedToggleSwitchRenderer : AnimatedControlRenderer
     private const int AnimationDuration = 300;
 
     private readonly ModernCheckBoxStyle _switchStyle;
+    private ButtonDarkModeAdapter? _imageAdapter;
     private float _focusCurrent;
     private float _focusStart;
     private float _focusTarget;
@@ -96,6 +98,25 @@ internal sealed class AnimatedToggleSwitchRenderer : AnimatedControlRenderer
         if (contentBounds.Width <= 0 || contentBounds.Height <= 0)
         {
             return;
+        }
+
+        if (Control is ButtonBase { Image: not null } button && textBounds.Width > 0 && textBounds.Height > 0)
+        {
+            _imageAdapter ??= new ButtonDarkModeAdapter(button);
+            ButtonBaseAdapter.LayoutOptions options = _imageAdapter.CommonLayout();
+            options.Client = textBounds;
+            options.Padding = Padding.Empty;
+            options.GrowBorderBy1PxWhenDefault = false;
+            options.BorderSize = 0;
+            options.PaddingSize = 0;
+            options.MaxFocus = false;
+            ButtonBaseAdapter.LayoutData layout = options.Layout();
+            using PaintEventArgs paintEventArgs = new(graphics, contentBounds);
+            _imageAdapter.PaintImage(paintEventArgs, layout);
+            if (button.TextImageRelation != TextImageRelation.Overlay)
+            {
+                textBounds = layout.TextBounds;
+            }
         }
 
         RenderSwitch(graphics, switchBounds, metrics);
@@ -533,6 +554,22 @@ internal readonly struct ToggleSwitchMetrics
     {
         TextFormatFlags textFormatFlags = AnimatedToggleSwitchRenderer.GetTextFormatFlags(control);
         Size textSize = AnimatedToggleSwitchRenderer.MeasureText(control, textFormatFlags);
+        if (control is ButtonBase { Image: not null } button)
+        {
+            Size imageSize = button.Image.Size + new Size(4, 4);
+            Size contentSize = button.TextImageRelation switch
+            {
+                TextImageRelation.ImageBeforeText or TextImageRelation.TextBeforeImage
+                    when !string.IsNullOrEmpty(control.Text)
+                    => new Size(imageSize.Width + textSize.Width, Math.Max(imageSize.Height, textSize.Height)),
+                TextImageRelation.ImageAboveText or TextImageRelation.TextAboveImage
+                    when !string.IsNullOrEmpty(control.Text)
+                    => new Size(Math.Max(imageSize.Width, textSize.Width), imageSize.Height + textSize.Height),
+                _ => new Size(Math.Max(imageSize.Width, textSize.Width), Math.Max(imageSize.Height, textSize.Height))
+            };
+            textSize = contentSize;
+        }
+
         return new Size(
             SwitchWidth + TextGap + textSize.Width + control.Padding.Horizontal,
             Math.Max(SwitchHeight, textSize.Height) + control.Padding.Vertical);

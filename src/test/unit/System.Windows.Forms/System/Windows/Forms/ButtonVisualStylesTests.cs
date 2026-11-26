@@ -5,7 +5,9 @@
 
 using System.ComponentModel;
 using System.Drawing;
+using System.Windows.Forms.ButtonInternal;
 using System.Windows.Forms.Rendering.Button;
+using System.Windows.Forms.Rendering.CheckBox;
 
 namespace System.Windows.Forms.Tests;
 
@@ -14,6 +16,230 @@ namespace System.Windows.Forms.Tests;
 // do not throw. The visuals are verified through the WinformsControlsTest exploratory harness.
 public class ButtonVisualStylesTests
 {
+    public static TheoryData<Type, ContentAlignment, RightToLeft, FlatStyle> ToggleSwitchImageAlignmentData
+    {
+        get
+        {
+            TheoryData<Type, ContentAlignment, RightToLeft, FlatStyle> data = new();
+            ContentAlignment[] alignments =
+            [
+                ContentAlignment.TopLeft,
+                ContentAlignment.TopCenter,
+                ContentAlignment.TopRight,
+                ContentAlignment.MiddleLeft,
+                ContentAlignment.MiddleCenter,
+                ContentAlignment.MiddleRight,
+                ContentAlignment.BottomLeft,
+                ContentAlignment.BottomCenter,
+                ContentAlignment.BottomRight
+            ];
+
+            foreach (Type controlType in new[] { typeof(CheckBox), typeof(RadioButton) })
+            foreach (RightToLeft rightToLeft in new[] { RightToLeft.No, RightToLeft.Yes })
+            foreach (FlatStyle flatStyle in Enum.GetValues<FlatStyle>())
+            foreach (ContentAlignment imageAlign in alignments)
+            {
+                data.Add(controlType, imageAlign, rightToLeft, flatStyle);
+            }
+
+            return data;
+        }
+    }
+
+    [WinFormsTheory]
+    [MemberData(nameof(ToggleSwitchImageAlignmentData))]
+    public void ToggleSwitch_Image_RespectsAlignment(
+        Type controlType,
+        ContentAlignment imageAlign,
+        RightToLeft rightToLeft,
+        FlatStyle flatStyle)
+    {
+        using Bitmap image = CreateSolidBitmap(new Size(9, 7), Color.Fuchsia);
+        using ButtonBase control = (ButtonBase)Activator.CreateInstance(controlType);
+        if (control is CheckBox checkBox)
+        {
+            checkBox.Appearance = Appearance.ToggleSwitch;
+        }
+        else
+        {
+            ((RadioButton)control).Appearance = Appearance.ToggleSwitch;
+        }
+
+        control.VisualStylesMode = VisualStylesMode.Net11;
+        control.FlatStyle = flatStyle;
+        control.Size = new Size(140, 50);
+        control.Text = string.Empty;
+        control.Image = image;
+        control.ImageAlign = imageAlign;
+        control.RightToLeft = rightToLeft;
+        control.CreateControl();
+        using Bitmap actual = new(control.Width, control.Height);
+        control.DrawToBitmap(actual, control.ClientRectangle);
+
+        ContentAlignment checkAlign = rightToLeft == RightToLeft.Yes
+            ? ContentAlignment.MiddleRight
+            : ContentAlignment.MiddleLeft;
+        Rectangle content = AnimatedToggleSwitchRenderer.GetTextBounds(
+            control,
+            checkAlign,
+            ToggleSwitchMetrics.Create(control));
+        Rectangle imageBounds = FindColorBounds(actual, Color.Fuchsia);
+        ButtonDarkModeAdapter adapter = new(control);
+        ButtonBaseAdapter.LayoutData expectedLayout = adapter.GetLayoutData(content);
+
+        Assert.Equal(image.Size, imageBounds.Size);
+        Assert.Equal(expectedLayout.ImageBounds, imageBounds);
+    }
+
+    [WinFormsTheory]
+    [InlineData(typeof(CheckBox))]
+    [InlineData(typeof(RadioButton))]
+    public void ToggleSwitch_Image_IsIncludedInPreferredSize(Type controlType)
+    {
+        using Bitmap image = CreateSolidBitmap(new Size(120, 60), Color.Fuchsia);
+        using ButtonBase control = (ButtonBase)Activator.CreateInstance(controlType);
+        if (control is CheckBox checkBox)
+        {
+            checkBox.Appearance = Appearance.ToggleSwitch;
+        }
+        else
+        {
+            ((RadioButton)control).Appearance = Appearance.ToggleSwitch;
+        }
+
+        control.VisualStylesMode = VisualStylesMode.Net11;
+        control.Image = image;
+        control.Text = string.Empty;
+        Size preferred = control.GetPreferredSize(Size.Empty);
+        ToggleSwitchMetrics metrics = ToggleSwitchMetrics.Create(control);
+
+        Assert.True(preferred.Width >= metrics.SwitchWidth + image.Width);
+        Assert.True(preferred.Height >= image.Height);
+    }
+
+    [WinFormsTheory]
+    [InlineData(typeof(CheckBox), TextImageRelation.ImageBeforeText, RightToLeft.No)]
+    [InlineData(typeof(CheckBox), TextImageRelation.TextBeforeImage, RightToLeft.Yes)]
+    [InlineData(typeof(CheckBox), TextImageRelation.ImageAboveText, RightToLeft.No)]
+    [InlineData(typeof(CheckBox), TextImageRelation.TextAboveImage, RightToLeft.No)]
+    [InlineData(typeof(RadioButton), TextImageRelation.TextBeforeImage, RightToLeft.No)]
+    [InlineData(typeof(RadioButton), TextImageRelation.ImageBeforeText, RightToLeft.Yes)]
+    [InlineData(typeof(RadioButton), TextImageRelation.ImageAboveText, RightToLeft.No)]
+    [InlineData(typeof(RadioButton), TextImageRelation.TextAboveImage, RightToLeft.No)]
+    public void ToggleSwitch_ImageAndText_RespectRelation(
+        Type controlType,
+        TextImageRelation relation,
+        RightToLeft rightToLeft)
+    {
+        using Bitmap image = CreateSolidBitmap(new Size(12, 8), Color.Fuchsia);
+        using ButtonBase control = (ButtonBase)Activator.CreateInstance(controlType);
+        if (control is CheckBox checkBox)
+        {
+            checkBox.Appearance = Appearance.ToggleSwitch;
+        }
+        else
+        {
+            ((RadioButton)control).Appearance = Appearance.ToggleSwitch;
+        }
+
+        control.VisualStylesMode = VisualStylesMode.Net11;
+        control.Size = new Size(200, 80);
+        control.BackColor = Color.White;
+        control.ForeColor = Color.Red;
+        control.Text = "MMMM";
+        control.TextAlign = ContentAlignment.MiddleCenter;
+        control.Image = image;
+        control.TextImageRelation = relation;
+        control.RightToLeft = rightToLeft;
+        control.CreateControl();
+        using Bitmap actual = new(control.Width, control.Height);
+        control.DrawToBitmap(actual, control.ClientRectangle);
+
+        Rectangle imageBounds = FindColorBounds(actual, Color.Fuchsia);
+        Rectangle textBounds = FindColorBounds(actual, Color.Red);
+        Assert.False(imageBounds.IsEmpty);
+        Assert.False(textBounds.IsEmpty);
+        if (relation is TextImageRelation.ImageAboveText)
+        {
+            Assert.True(imageBounds.Bottom <= textBounds.Top);
+        }
+        else if (relation is TextImageRelation.TextAboveImage)
+        {
+            Assert.True(textBounds.Bottom <= imageBounds.Top);
+        }
+        else if ((relation == TextImageRelation.ImageBeforeText) != (rightToLeft == RightToLeft.Yes))
+        {
+            Assert.True(imageBounds.Right <= textBounds.Left);
+        }
+        else
+        {
+            Assert.True(textBounds.Right <= imageBounds.Left);
+        }
+    }
+
+    [WinFormsTheory]
+    [InlineData(typeof(CheckBox), ContentAlignment.TopCenter, KnownColor.Red)]
+    [InlineData(typeof(CheckBox), ContentAlignment.MiddleCenter, KnownColor.Blue)]
+    [InlineData(typeof(RadioButton), ContentAlignment.TopCenter, KnownColor.Red)]
+    [InlineData(typeof(RadioButton), ContentAlignment.MiddleCenter, KnownColor.Blue)]
+    public void ModernGlyphControl_OversizedImage_RespectsAlignment(
+        Type controlType,
+        ContentAlignment imageAlign,
+        KnownColor expectedColor)
+    {
+        using Bitmap image = new(3840, 2160);
+        image.SetResolution(150, 150);
+        using (Graphics graphics = Graphics.FromImage(image))
+        {
+            int bandHeight = image.Height / 3;
+            graphics.Clear(Color.Red);
+            graphics.FillRectangle(Brushes.Green, 0, bandHeight, image.Width, bandHeight);
+            graphics.FillRectangle(Brushes.Blue, 0, bandHeight * 2, image.Width, bandHeight);
+        }
+
+        using var control = (ButtonBase)Activator.CreateInstance(controlType);
+        control.VisualStylesMode = VisualStylesMode.Net11;
+        control.Size = new Size(126, 30);
+        control.Image = image;
+        control.ImageAlign = imageAlign;
+        control.CreateControl();
+
+        using Bitmap actual = new(control.Width, control.Height);
+        actual.SetResolution(96, 96);
+        using Graphics target = Graphics.FromImage(actual);
+        using PaintEventArgs paintEventArgs = new(target, control.ClientRectangle);
+        control.Adapter.Paint(paintEventArgs);
+
+        Assert.Equal(Color.FromKnownColor(expectedColor).ToArgb(), actual.GetPixel(control.Width / 2, control.Height / 2).ToArgb());
+    }
+
+    [WinFormsTheory]
+    [InlineData(typeof(CheckBox))]
+    [InlineData(typeof(RadioButton))]
+    public void ModernGlyphControl_OversizedImage_DoesNotCoverGlyph(Type controlType)
+    {
+        using Bitmap image = CreateSolidBitmap(new Size(300, 100), Color.Fuchsia);
+        using ButtonBase control = (ButtonBase)Activator.CreateInstance(controlType);
+        control.VisualStylesMode = VisualStylesMode.Net11;
+        control.Size = new Size(126, 30);
+        control.Text = string.Empty;
+        control.Image = image;
+        control.ImageAlign = ContentAlignment.MiddleRight;
+        control.CreateControl();
+
+        CheckableControlBaseAdapter adapter = control is CheckBox checkBox
+            ? new CheckBoxModernAdapter(checkBox, FlatStyle.Standard)
+            : new RadioButtonModernAdapter((RadioButton)control, FlatStyle.Standard);
+        ButtonBaseAdapter.LayoutOptions options = adapter.CommonLayout();
+        options.CheckPaddingSize = control.LogicalToDeviceUnits(2);
+        options.CheckSize = Math.Max(control.LogicalToDeviceUnits(13), (int)(control.Font.Height * 0.9f));
+        Rectangle glyph = options.Layout().CheckBounds;
+        using Bitmap actual = new(control.Width, control.Height);
+        control.DrawToBitmap(actual, control.ClientRectangle);
+
+        Assert.NotEqual(Color.Fuchsia.ToArgb(), actual.GetPixel(glyph.Left + (glyph.Width / 2), glyph.Top + (glyph.Height / 2)).ToArgb());
+    }
+
     [WinFormsTheory]
     [InlineData(FlatStyle.Standard)]
     [InlineData(FlatStyle.Flat)]
