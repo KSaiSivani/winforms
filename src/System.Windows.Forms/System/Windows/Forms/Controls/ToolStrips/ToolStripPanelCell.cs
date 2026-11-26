@@ -287,7 +287,10 @@ internal sealed class ToolStripPanelCell : ArrangedElement
         }
         else
         {
-            preferredSize = (!_wrappedToolStrip.AutoSize) ? _wrappedToolStrip.Size : _wrappedToolStrip.GetPreferredSize(constrainingSize);
+            // Layout may have compacted the current bounds without changing the requested size.
+            preferredSize = _wrappedToolStrip.AutoSize
+                ? _wrappedToolStrip.GetPreferredSize(constrainingSize)
+                : CommonProperties.GetSpecifiedBounds(_wrappedToolStrip).Size;
         }
 
         // return LayoutUtils.IntersectSizes(constrainingSize, preferredSize);

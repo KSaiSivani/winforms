@@ -353,6 +353,14 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
         }
     }
 
+    private void ClearUnconstrainedMargins()
+    {
+        foreach (ToolStripPanelCell cell in Cells)
+        {
+            cell.UnconstrainedMargin = null;
+        }
+    }
+
     private void ApplyCachedBounds()
     {
         for (int i = 0; i < Cells.Count; i++)
@@ -368,14 +376,6 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
         }
     }
 
-    private void ClearUnconstrainedMargins()
-    {
-        foreach (ToolStripPanelCell cell in Cells)
-        {
-            cell.UnconstrainedMargin = null;
-        }
-    }
-
     protected virtual void OnLayout(LayoutEventArgs e)
     {
         if (Initialized && !_state[s_stateInLayout])
@@ -383,7 +383,6 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
             _state[s_stateInLayout] = true;
             try
             {
-                // Retry the preferred positions while retaining effective margins for dragging.
                 foreach (ToolStripPanelCell currentCell in Cells)
                 {
                     if (currentCell.UnconstrainedMargin is Padding margin)
@@ -740,14 +739,6 @@ public partial class ToolStripPanelRow : Component, IArrangedElement
 
     internal void MoveControl(ToolStrip movingControl, Point startClientLocation, Point endClientLocation)
     {
-        bool positionChanged = Orientation == Orientation.Horizontal
-            ? startClientLocation.X != endClientLocation.X
-            : startClientLocation.Y != endClientLocation.Y;
-        if (!Locked && positionChanged)
-        {
-            ClearUnconstrainedMargins();
-        }
-
         RowManager.MoveControl(movingControl, startClientLocation, endClientLocation);
     }
 

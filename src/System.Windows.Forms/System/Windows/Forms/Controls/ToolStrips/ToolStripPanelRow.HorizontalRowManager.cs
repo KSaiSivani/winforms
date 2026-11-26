@@ -151,11 +151,11 @@ public partial class ToolStripPanelRow
                 if (deltaX < 0)
                 {
                     // moving to the left
-                    MoveLeft(index, deltaX * -1);
+                    MoveLeft(index, deltaX * -1, commitMove: true);
                 }
                 else
                 {
-                    MoveRight(index, deltaX);
+                    MoveRight(index, deltaX, commitMove: true);
                 }
             }
             else
@@ -164,7 +164,7 @@ public partial class ToolStripPanelRow
             }
         }
 
-        private int MoveLeft(int index, int spaceToFree)
+        private int MoveLeft(int index, int spaceToFree, bool commitMove = false)
         {
             int freedSpace = 0;
 
@@ -225,13 +225,18 @@ public partial class ToolStripPanelRow
             }
             finally
             {
+                if (commitMove && freedSpace > 0)
+                {
+                    Row.ClearUnconstrainedMargins();
+                }
+
                 Row.ResumeLayout(true);
             }
 
             return freedSpace;
         }
 
-        private int MoveRight(int index, int spaceToFree)
+        private int MoveRight(int index, int spaceToFree, bool commitMove = false)
         {
             int freedSpace = 0;
             Row.SuspendLayout();
@@ -305,6 +310,10 @@ public partial class ToolStripPanelRow
                         cellMargin = cell.Margin;
                         cellMargin.Left += spaceToFree;
                         cell.Margin = cellMargin;
+                        if (commitMove)
+                        {
+                            Row.ClearUnconstrainedMargins();
+                        }
                     }
 
                     return spaceToFree;
@@ -323,7 +332,6 @@ public partial class ToolStripPanelRow
 
                     if (spaceToFree >= freedSpace)
                     {
-                        Row.ResumeLayout(true);
                         return spaceToFree;
                     }
                 }
@@ -336,6 +344,10 @@ public partial class ToolStripPanelRow
                         cellMargin = cell.Margin;
                         cellMargin.Left += freedSpace;
                         cell.Margin = cellMargin;
+                        if (commitMove && freedSpace > 0)
+                        {
+                            Row.ClearUnconstrainedMargins();
+                        }
                     }
                 }
             }
