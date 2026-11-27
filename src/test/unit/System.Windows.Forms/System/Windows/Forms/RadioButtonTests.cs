@@ -16,6 +16,27 @@ namespace System.Windows.Forms.Tests;
 public class RadioButtonTests : AbstractButtonBaseTests
 {
     [WinFormsTheory]
+    [InlineData(VisualStylesMode.Classic, false)]
+    [InlineData(VisualStylesMode.Classic, true)]
+    [InlineData(VisualStylesMode.Net11, false)]
+    [InlineData(VisualStylesMode.Net11, true)]
+    public void RadioButton_AutoCheckFalse_MouseDown_PreservesGlyph(VisualStylesMode mode, bool isChecked)
+    {
+        using SubRadioButton control = new()
+        {
+            AutoCheck = false,
+            Checked = isChecked,
+            VisualStylesMode = mode,
+            Size = new Size(100, 30)
+        };
+
+        CheckBoxTests.VerifyAutoCheckFalsePressedAppearance(
+            control,
+            () => control.OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, 0, 0, 0)));
+        Assert.Equal(isChecked, control.Checked);
+    }
+
+    [WinFormsTheory]
     [InlineData(8)]
     [InlineData(9)]
     [InlineData(10)]

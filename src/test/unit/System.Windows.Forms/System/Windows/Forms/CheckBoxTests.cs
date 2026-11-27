@@ -1575,6 +1575,59 @@ public class CheckBoxTests : AbstractButtonBaseTests
     }
 
     [WinFormsTheory]
+    [InlineData(VisualStylesMode.Classic, CheckState.Unchecked)]
+    [InlineData(VisualStylesMode.Classic, CheckState.Checked)]
+    [InlineData(VisualStylesMode.Classic, CheckState.Indeterminate)]
+    [InlineData(VisualStylesMode.Net11, CheckState.Unchecked)]
+    [InlineData(VisualStylesMode.Net11, CheckState.Checked)]
+    [InlineData(VisualStylesMode.Net11, CheckState.Indeterminate)]
+    public void CheckBox_AutoCheckFalse_MouseDown_PreservesGlyph(VisualStylesMode mode, CheckState checkState)
+    {
+        using SubCheckBox control = new()
+        {
+            AutoCheck = false,
+            CheckState = checkState,
+            VisualStylesMode = mode,
+            Size = new Size(100, 30)
+        };
+
+        VerifyAutoCheckFalsePressedAppearance(
+            control,
+            () => control.OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, 0, 0, 0)));
+        Assert.Equal(checkState, control.CheckState);
+    }
+
+    internal static void VerifyAutoCheckFalsePressedAppearance(ButtonBase control, Action press)
+    {
+        using Bitmap pressed = new(control.Width, control.Height);
+        using Bitmap expected = new(control.Width, control.Height);
+
+        Paint(expected, control.ClientRectangle);
+        press();
+        Paint(pressed, control.ClientRectangle);
+        AssertEqualPixels(expected, pressed);
+
+        void Paint(Bitmap bitmap, Rectangle clip)
+        {
+            using Graphics graphics = Graphics.FromImage(bitmap);
+            graphics.SetClip(clip);
+            using PaintEventArgs args = new(graphics, clip);
+            control.Adapter.Paint(args);
+        }
+
+        static void AssertEqualPixels(Bitmap expected, Bitmap actual)
+        {
+            for (int y = 0; y < expected.Height; y++)
+            {
+                for (int x = 0; x < expected.Width; x++)
+                {
+                    Assert.Equal(expected.GetPixel(x, y), actual.GetPixel(x, y));
+                }
+            }
+        }
+    }
+
+    [WinFormsTheory]
     [InlineData(true)]
     [InlineData(false)]
     public void CheckBox_LeftClick_MouseUpCounts(bool capture)

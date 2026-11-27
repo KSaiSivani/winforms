@@ -183,7 +183,7 @@ internal abstract class RadioButtonBaseAdapter : CheckableControlBaseAdapter
             style |= ButtonState.Inactive;
         }
 
-        if (Control.MouseIsDown)
+        if (Control.MouseIsDown && Control.AutoCheck)
         {
             style |= ButtonState.Pushed;
         }
